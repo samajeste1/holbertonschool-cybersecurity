@@ -1,0 +1,3 @@
+#!/bin/bash
+echo "$1 ALL=(ALL) /usr/bin/systemctl restart apache2, /usr/bin/journalctl" > /etc/sudoers.d/junior
+visudo -c -f /etc/sudoers.d/junior
