@@ -1,2 +1,2 @@
 #!/bin/bash
-kill -SIGKILL $1
+kill -9 $1

@@ -1,2 +1,2 @@
 #!/bin/bash
-awk '/PPid/ {print $2}' /proc/$1/status
+ps -o ppid= -p $1
