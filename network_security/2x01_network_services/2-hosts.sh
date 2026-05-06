@@ -1,2 +1,2 @@
 #!/bin/bash
-awk '/\blocalhost\b/ && !/^#/ {print $1; exit}' /etc/hosts
+grep -E "^[0-9].*\slocalhost" /etc/hosts | awk '{print $1}' | head -1
