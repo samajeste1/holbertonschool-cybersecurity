@@ -22,19 +22,19 @@ log() {
     local status="$3"
     local details="$4"
     local timestamp
-    timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    timestamp=$(date -u +%FT%TZ)
     echo "{\"timestamp\": \"$timestamp\", \"component\": \"$component\", \"target\": \"$target\", \"status\": \"$status\", \"details\": \"$details\"}" >> "$LOG_FILE"
 }
 
 check_services() {
     for svc in "${SERVICES[@]}"; do
         if pgrep -f "$svc" > /dev/null 2>&1; then
-            log "SERVICE" "$svc" "OK" "is running"
+            log "SERVICE" "$svc" "OK" "OK: $svc is running"
         else
             if eval "$svc" > /dev/null 2>&1; then
-                log "SERVICE" "$svc" "FIXED" "Restarted $svc"
+                log "SERVICE" "$svc" "FIXED" "FIXED: Restarted $svc"
             else
-                log "SERVICE" "$svc" "ALERT" "Failed to restart $svc"
+                log "SERVICE" "$svc" "ALERT" "ALERT: Failed to restart $svc"
             fi
         fi
     done
@@ -51,10 +51,10 @@ check_integrity() {
         live_hash=$(md5sum "$file" | awk '{print $1}')
         gold_hash=$(md5sum "$gold" | awk '{print $1}')
         if [ "$live_hash" = "$gold_hash" ]; then
-            log "INTEGRITY" "$file" "OK" "$file integrity verified"
+            log "INTEGRITY" "$file" "OK" "OK: $file integrity verified"
         else
             cp "$gold" "$file"
-            log "INTEGRITY" "$file" "FIXED" "Restored $file"
+            log "INTEGRITY" "$file" "FIXED" "FIXED: Restored $file"
         fi
     done
 }
@@ -73,7 +73,7 @@ check_ports() {
             pid=$(lsof -ti TCP:"$port" -s TCP:LISTEN 2>/dev/null)
             if [ -n "$pid" ]; then
                 kill -9 "$pid" 2>/dev/null
-                log "PORT" "$port" "ALERT" "Killed rogue process on port $port"
+                log "PORT" "$port" "ALERT" "ALERT: Killed rogue process on port $port"
             fi
         fi
     done
