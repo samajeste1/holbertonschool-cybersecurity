@@ -1,17 +1,2 @@
 #!/bin/bash
-cidr=$1
-mask=""
-for i in 1 2 3 4; do
-    if [ $cidr -ge 8 ]; then
-        mask="${mask}255"
-        cidr=$((cidr - 8))
-    elif [ $cidr -gt 0 ]; then
-        bits=$((256 - (1 << (8 - cidr))))
-        mask="${mask}${bits}"
-        cidr=0
-    else
-        mask="${mask}0"
-    fi
-    [ $i -lt 4 ] && mask="${mask}."
-done
-echo "$mask"
+echo "$((($1>0?(0xFFFFFFFF<<(32-$1))&0xFFFFFFFF:0)>>24&255)).$((($1>0?(0xFFFFFFFF<<(32-$1))&0xFFFFFFFF:0)>>16&255)).$((($1>0?(0xFFFFFFFF<<(32-$1))&0xFFFFFFFF:0)>>8&255)).$((($1>0?(0xFFFFFFFF<<(32-$1))&0xFFFFFFFF:0)&255))"
