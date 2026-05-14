@@ -1,1 +1,1 @@
-malicious-c2.com
+cmd-relay.darknet-c2.io

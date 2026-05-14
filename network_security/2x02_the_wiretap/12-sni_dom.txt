@@ -1,1 +1,1 @@
-exfil.malicious-c2.com
+exfil-drop.darkweb.link

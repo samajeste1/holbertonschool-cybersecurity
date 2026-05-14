@@ -1,1 +1,1 @@
-10.10.10.99||malicious-c2.com||tcp.flags.syn == 1 and tcp.flags.ack == 0
+10.10.10.99||cmd-relay.darknet-c2.io||tcp.flags.syn == 1 and tcp.flags.ack == 0
