@@ -3,144 +3,240 @@
 **Document Reference:** NX-SEC-ACP-001
 **Version:** 1.0
 **Author:** Interim CISO
-**Effective:** Immediately upon publication
+**Effective:** Immediately
 **Scope:** All systems, users, networks, and credentials within Nexus Financial's environment
 
 ---
 
 ## Executive Summary
 
-This policy eliminates the shared `nexus_master.pem` key, enforces individual accountability for all system access, implements the principle of least privilege across all user roles, and defines network access controls that close the open database port without preventing the remote development team from working. Every rule in this document has a corresponding implementation in `technical/rbac_setup.sh` and `technical/network_defense.sh`.
+This policy eliminates the shared `nexus_master.pem` key, enforces individual accountability, implements least-privilege RBAC, and defines exact network rules that close the open database port. Every rule maps directly to implementation commands in `technical/rbac_setup.sh` and `technical/network_defense.sh`.
 
 ---
 
-## Section 1: Authentication Policy
+## Section 1: Authentication
 
-### 1.1 Password and PIN Requirements
+### 1.1 SSH Key Management
 
-- Minimum length: 16 characters for service accounts, 12 characters for user accounts.
-- Composition: at least one uppercase, one lowercase, one digit, one special character.
-- The CEO's admin panel PIN of `1975` is **revoked immediately**. The admin panel must implement full password authentication with MFA.
-- Passwords may not be written on any physical surface, stored in plaintext files, or transmitted via instant messaging (including Slack).
-- All credentials must be stored in the company-approved password manager (1Password Teams or Bitwarden Business). Personal password manager use for work credentials is prohibited.
-- Password reuse across systems is prohibited. Staging credentials must be distinct from production credentials.
+**Policy:** The shared `nexus_master.pem` key is revoked immediately. Each engineer receives an individual `ed25519` keypair.
 
-### 1.2 SSH Key Management
+**Implementation commands (executed by `rbac_setup.sh`):**
 
-**The `nexus_master.pem` practice is terminated effective immediately.**
+```bash
+# Generate individual key per user (run as each user)
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N "" -C "username@nexus-financial"
 
-Replacement policy:
+# Remove shared master key from all authorized_keys
+sed -i '/nexus_master/d' /home/*/.ssh/authorized_keys
+sed -i '/nexus_master/d' /root/.ssh/authorized_keys
 
-- Every engineer who requires SSH access to production servers is issued a **unique, individual ed25519 keypair** generated on their own machine.
-- The private key never leaves the engineer's machine. The public key is added to the authorized_keys of the specific server(s) they are authorized to access.
-- The shared `nexus_master.pem` key is **revoked from all servers immediately** (remove from `~/.ssh/authorized_keys` on all hosts).
-- The `nexus_master.pem` file must be deleted from all machines and the Slack message containing it must be deleted. The channel `#dev-ops` must be audited for all credential disclosures.
-- Emergency production access outside business hours is handled via a **Break Glass procedure**: a sealed, time-limited emergency key stored in the password manager, accessible only by the CTO and CISO, with mandatory post-use review and immediate rotation.
-- SSH keys must use ed25519 or RSA-4096 minimum. RSA-2048 and DSA keys are prohibited.
+# Disable password auth and root login in sshd_config
+sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
+sed -i 's/^#\?MaxAuthTries.*/MaxAuthTries 3/' /etc/ssh/sshd_config
+systemctl restart ssh
+```
 
-Implementation note for `rbac_setup.sh`: Generate individual keys for each role, configure `sshd` to disable password authentication, and restrict which users can SSH to which hosts.
+**Accepted key types:** `ed25519` or `rsa-4096` only. RSA-2048 and DSA are prohibited.
 
-### 1.3 Multi-Factor Authentication (MFA)
+**Break Glass procedure:** One emergency key stored in password manager, accessible only by CTO + CISO. Mandatory rotation after each use.
 
-- MFA is **mandatory** for: admin panel access, AWS console access, all remote access (VPN), and the password manager.
-- MFA method: TOTP authenticator app (Google Authenticator, Authy). SMS-based MFA is prohibited for production systems.
-- MFA bypass is prohibited under any circumstances. Requests to disable MFA "temporarily" are denied by default and require written CISO approval.
+### 1.2 Password Policy
 
----
+**Policy:** Minimum 16 characters, enforced via PAM `pwquality`.
 
-## Section 2: Authorization Policy — RBAC Model
-
-### 2.1 Role Definitions
-
-| Role | Members | Access Scope | Restrictions |
-|------|---------|-------------|-------------|
-| `sysadmin` | Interim CISO only | Full system configuration, user management, firewall | Cannot disable logging or audit trail |
-| `ops` | CTO (Dave) | Read-only access to system logs, service status monitoring | Cannot modify config files, cannot SSH to production directly |
-| `devs` | Lead Developer (Sarah) + developers | Deploy code, restart application services (nginx, app server), read application logs | Cannot access database directly, cannot modify firewall rules |
-| `auditors` | External auditor | Read-only access to logs in `/var/log/audit/` and `/var/log/app/` | No write access anywhere, no SSH |
-| `db_service` | Database service account only | Read/write to assigned database schemas only | Cannot access other schemas, cannot create users |
-
-### 2.2 Principle of Least Privilege
-
-- Every user receives the minimum permissions required to perform their job function. No exceptions granted for convenience.
-- Sarah (Lead Dev) can restart nginx without root: implemented via sudoers entry `devs ALL=(root) NOPASSWD: /bin/systemctl restart nginx`.
-- Dave (CTO) can read logs without editing config: implemented via group `ops` with read permission on `/var/log/` and explicit deny on `/etc/`.
-- No user has unrestricted root access in production. Root login via SSH is disabled. `sudo -i` and `sudo su` are prohibited in sudoers.
-
-### 2.3 Sudoers Policy
-
-The following sudoers configuration is enforced (implemented in `rbac_setup.sh`):
+**Implementation (`/etc/security/pwquality.conf`):**
 
 ```
-# Devs: restart application services only
-%devs ALL=(root) NOPASSWD: /bin/systemctl restart nginx, /bin/systemctl restart app
+minlen = 16
+dcredit = -1
+ucredit = -1
+lcredit = -1
+ocredit = -1
+maxrepeat = 3
+reject_username = yes
+```
 
-# Ops: read logs only, no config access
-%ops ALL=(root) NOPASSWD: /bin/journalctl, /bin/cat /var/log/*
+**Password expiry (`/etc/login.defs`):**
 
-# Sysadmin: full sudo with password and logging
+```
+PASS_MAX_DAYS   90
+PASS_MIN_DAYS   1
+PASS_WARN_AGE   14
+```
+
+**CEO admin panel PIN `1975`:** Revoked immediately. Replaced with 16-character random password + TOTP MFA.
+
+### 1.3 Multi-Factor Authentication
+
+**Policy:** MFA required on all remote access, AWS console, and admin panel.
+
+**Method:** TOTP authenticator app (Google Authenticator or Authy). SMS MFA is prohibited.
+
+---
+
+## Section 2: Authorization — RBAC Model
+
+### 2.1 Groups and Roles
+
+| Group | Members | Primary Function |
+|-------|---------|-----------------|
+| `sysadmin` | `nexus_admin` (CISO) | Full system administration |
+| `devs` | `sarah`, developers | Deploy code, restart app services |
+| `ops` | `dave` (CTO) | Read logs, monitor services |
+| `auditors` | `auditor` | Read audit logs only |
+
+**Implementation commands:**
+
+```bash
+groupadd sysadmin
+groupadd devs
+groupadd ops
+groupadd auditors
+
+useradd -m -s /bin/bash -g sysadmin nexus_admin
+useradd -m -s /bin/bash -g devs sarah
+useradd -m -s /bin/bash -g ops dave
+useradd -m -s /bin/bash -g auditors auditor
+```
+
+### 2.2 File Permissions per Role
+
+| Path | Owner | Permissions | Accessible by |
+|------|-------|-------------|---------------|
+| `/home/nexus_admin/` | `nexus_admin:sysadmin` | `700` | sysadmin only |
+| `/home/sarah/` | `sarah:devs` | `700` | sarah only |
+| `/home/dave/` | `dave:ops` | `700` | dave only |
+| `/home/auditor/` | `auditor:auditors` | `700` | auditor only |
+| `/var/log/` | `root:adm` | `750` | root + adm; read by ops/auditors via ACL |
+| `/var/log/audit/` | `root:root` | `750` | auditors: `r-x` via `setfacl` |
+| `/etc/` | `root:root` | `755` | devs: `---` via `setfacl`; ops: `r-x` |
+
+**Implementation commands:**
+
+```bash
+chmod 700 /home/nexus_admin /home/sarah /home/dave /home/auditor
+
+# ACL: ops can read logs, devs cannot touch /etc
+setfacl -R -m g:ops:rx /var/log/
+setfacl -R -m g:auditors:rx /var/log/audit/
+setfacl -m g:devs:--- /etc/
+setfacl -m g:ops:r-x /etc/
+```
+
+### 2.3 Sudoers Rules — Least Privilege
+
+**File:** `/etc/sudoers.d/nexus_rbac` (mode `440`)
+
+```
+# sysadmin — full sudo with password
 %sysadmin ALL=(ALL:ALL) ALL
 
-# Explicitly deny dangerous commands for all non-sysadmin
-Cmnd_Alias DANGER = /bin/rm, /bin/dd, /usr/bin/shred, /bin/mkfs
-%devs !DANGER
-%ops !DANGER
+# devs — restart nginx and app only, no password required
+%devs ALL=(root) NOPASSWD: /bin/systemctl restart nginx
+%devs ALL=(root) NOPASSWD: /bin/systemctl restart app
+%devs ALL=(root) NOPASSWD: /bin/systemctl status nginx
+%devs ALL=(root) NOPASSWD: /bin/systemctl status app
+%devs ALL=(root) NOPASSWD: /usr/bin/journalctl -u nginx
+%devs ALL=(root) NOPASSWD: /usr/bin/journalctl -u app
+
+# ops — read logs only, no service management
+%ops ALL=(root) NOPASSWD: /usr/bin/journalctl
+%ops ALL=(root) NOPASSWD: /bin/systemctl status *
+
+# auditors — read audit logs only
+%auditors ALL=(root) NOPASSWD: /usr/bin/aureport
+%auditors ALL=(root) NOPASSWD: /usr/bin/ausearch
+
+# Deny root shell to all non-sysadmin
+%devs ALL=(root) !/bin/bash, !/bin/sh, !/usr/bin/su
+%ops ALL=(root) !/bin/bash, !/bin/sh, !/usr/bin/su
+%auditors ALL=(root) !/bin/bash, !/bin/sh, !/usr/bin/su
 ```
 
-### 2.4 Database Authorization
+**Sarah (devs) can restart nginx without root — verified by:**
 
-- The PostgreSQL database is not directly accessible to any human user in normal operations. All application access goes through the application service account (`db_service`) with a randomly generated 32-character password.
-- The remote frontend team in Bali accesses data through the **application API** over HTTPS, not directly over port 5432. Direct database access for remote teams is prohibited.
-- Database administrative access (schema changes, user management) requires a separate admin account, accessed only from the bastion host, with all sessions logged.
+```bash
+sudo -u sarah sudo systemctl restart nginx   # ALLOWED
+sudo -u sarah sudo vim /etc/nginx/nginx.conf # DENIED
+```
 
----
+**Dave (ops) reads logs without editing config — verified by:**
 
-## Section 3: Network Access Policy
-
-### 3.1 Default Deny
-
-The network firewall policy is **default deny**. All traffic is blocked unless explicitly permitted by a documented rule with a business justification.
-
-### 3.2 Permitted Traffic Rules
-
-| Rule | Source | Destination | Port | Protocol | Justification |
-|------|--------|------------|------|----------|---------------|
-| HTTPS-IN | `0.0.0.0/0` | Web server | 443 | TCP | Public web application |
-| SSH-BASTION | Bastion host IP only | All servers | 22 | TCP | Secure remote administration |
-| DB-APP | Web server private IP only | DB server | 5432 | TCP | Application-to-database only |
-| LOG-OUT | All internal | Log server | 514 | UDP | Centralized logging |
-
-### 3.3 Explicitly Prohibited Rules
-
-- Port 5432 (PostgreSQL) open to `0.0.0.0/0` — **terminated immediately**.
-- Port 22 (SSH) open to `0.0.0.0/0` — **terminated immediately**. SSH accessible only from bastion host.
-- Any rule with source `0.0.0.0/0` on internal service ports is prohibited.
-
-### 3.4 Remote Access for Bali Frontend Team
-
-The Bali team accesses Nexus Financial systems via:
-1. **API over HTTPS** for all data access (no direct DB connection).
-2. **WireGuard VPN** for any development environment access requiring internal network visibility. VPN credentials are individual (not shared) and subject to the same MFA requirement as all remote access.
-
-Implementation note: WireGuard VPN setup is outside the 5-day scope but is documented as a Day 10 deliverable.
+```bash
+sudo -u dave sudo journalctl -n 50   # ALLOWED
+sudo -u dave sudo vim /etc/ssh/sshd_config  # DENIED
+```
 
 ---
 
-## Section 4: Account Lifecycle Policy
+## Section 3: Network Access Rules
 
-### 4.1 Provisioning
+### 3.1 Firewall — UFW Default Deny
 
-- All accounts are created with explicit approval from the CISO and documented with: employee name, role, systems granted access, date of provisioning, and approver.
-- Default accounts and passwords on all systems must be changed before the system enters production.
+**Policy:** All traffic is blocked unless explicitly permitted. Implemented by `technical/network_defense.sh`.
 
-### 4.2 Offboarding
+```bash
+ufw default deny incoming
+ufw default deny outgoing
+ufw default deny routed
+```
 
-- All accounts and credentials for departing employees must be revoked within **1 hour** of confirmed departure.
-- SSH public keys of departing employees must be removed from all `authorized_keys` files immediately.
-- If a departing employee had access to the shared `nexus_master.pem` (all current developers did): the key is considered compromised and must be rotated as part of offboarding. This is already being executed as part of this engagement.
+### 3.2 Permitted Rules
 
-### 4.3 Quarterly Access Review
+| Service | Source | Destination Port | Protocol | Justification |
+|---------|--------|-----------------|---------|---------------|
+| HTTPS | `0.0.0.0/0` | `443` | TCP | Public web application |
+| HTTP | `0.0.0.0/0` | `80` | TCP | Redirect to HTTPS only |
+| SSH | `192.168.1.10` (bastion) | `22` | TCP | Admin access via bastion only |
+| PostgreSQL | `192.168.1.20` (web server) | `5432` | TCP | App-to-DB only — no internet |
+| WireGuard VPN | `0.0.0.0/0` | `51820` | UDP | Remote team (Bali) VPN entry |
+| Syslog | Internal | `192.168.1.50:514` | UDP/TCP | Centralized log server |
+| DNS | Internal | `53` | UDP/TCP | Name resolution |
+| NTP | Internal | `123` | UDP | Time synchronization |
 
-- Every quarter, the CISO reviews all active accounts, permissions, and SSH keys.
-- Any account that has not been used in 90 days is disabled pending review.
-- Shared accounts (except documented service accounts) are prohibited.
+**Implementation commands:**
+
+```bash
+ufw allow in from 192.168.1.10 to any port 22 proto tcp     # SSH: bastion only
+ufw allow in from 192.168.1.20 to any port 5432 proto tcp   # DB: web server only
+ufw allow in to any port 443 proto tcp                       # HTTPS public
+ufw allow in to any port 51820 proto udp                     # WireGuard VPN
+```
+
+### 3.3 Bali Remote Team — VPN Solution
+
+The Bali team previously required direct port 5432 access. This is replaced by:
+
+1. **WireGuard VPN** — each Bali developer receives individual VPN credentials.
+2. VPN grants access to the **HTTPS API** (`192.168.1.20:443`) only — not direct DB access.
+3. VPN credentials are individual (not shared), subject to MFA, and rotated quarterly.
+
+```bash
+# VPN subnet: 10.8.0.0/24
+# Bali team HTTPS access via VPN:
+ufw allow in from 10.8.0.0/24 to any port 443 proto tcp
+# Bali team DB access: BLOCKED (default deny covers 5432 from VPN subnet)
+```
+
+---
+
+## Section 4: Account Lifecycle
+
+### 4.1 Offboarding — Immediate Revocation (within 1 hour)
+
+```bash
+# Disable account
+usermod -L <username>
+# Remove SSH keys
+echo "" > /home/<username>/.ssh/authorized_keys
+# Revoke sudo if applicable
+rm -f /etc/sudoers.d/<username>
+# Lock any service accounts the user knew credentials for (rotate passwords)
+```
+
+### 4.2 Quarterly Access Review
+
+- All accounts unused for 90 days are disabled pending review.
+- All SSH public keys are audited: `find /home -name authorized_keys -exec cat {} \;`
+- Sudoers entries are reviewed for scope creep.
