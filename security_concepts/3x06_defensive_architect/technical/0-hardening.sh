@@ -18,62 +18,75 @@ echo "System updated" | tee -a "$LOG"
 # 2. SSH HARDENING
 echo "Hardening SSH configuration..." | tee -a "$LOG"
 SSHD_CONF="/etc/ssh/sshd_config"
-[ ! -f "${SSHD_CONF}.orig" ] && cp "$SSHD_CONF" "${SSHD_CONF}.orig"
+test -f "${SSHD_CONF}.orig" || cp "$SSHD_CONF" "${SSHD_CONF}.orig"
 
-set_sshd() {
-    local key="$1" val="$2"
-    grep -qE "^#?${key}" "$SSHD_CONF" \
-        && sed -i "s|^#\?${key}.*|${key} ${val}|" "$SSHD_CONF" \
-        || echo "${key} ${val}" >> "$SSHD_CONF"
-}
+sed -i 's|^#\?PermitRootLogin.*|PermitRootLogin no|' "$SSHD_CONF"
+grep -qE '^PermitRootLogin' "$SSHD_CONF" || echo "PermitRootLogin no" >> "$SSHD_CONF"
 
-set_sshd PermitRootLogin no
-set_sshd PasswordAuthentication no
-set_sshd PubkeyAuthentication yes
-set_sshd X11Forwarding no
-set_sshd MaxAuthTries 3
-set_sshd LoginGraceTime 30
-set_sshd AllowAgentForwarding no
-set_sshd AllowTcpForwarding no
-set_sshd PermitEmptyPasswords no
-set_sshd ClientAliveInterval 300
-set_sshd ClientAliveCountMax 2
-set_sshd LogLevel VERBOSE
+sed -i 's|^#\?PasswordAuthentication.*|PasswordAuthentication no|' "$SSHD_CONF"
+grep -qE '^PasswordAuthentication' "$SSHD_CONF" || echo "PasswordAuthentication no" >> "$SSHD_CONF"
 
-cat > /etc/ssh/banner << 'EOF'
-NEXUS FINANCIAL - AUTHORIZED ACCESS ONLY
-All sessions are monitored and logged.
-Unauthorized access is prohibited and will be prosecuted.
-EOF
-set_sshd Banner /etc/ssh/banner
+sed -i 's|^#\?PubkeyAuthentication.*|PubkeyAuthentication yes|' "$SSHD_CONF"
+grep -qE '^PubkeyAuthentication' "$SSHD_CONF" || echo "PubkeyAuthentication yes" >> "$SSHD_CONF"
+
+sed -i 's|^#\?X11Forwarding.*|X11Forwarding no|' "$SSHD_CONF"
+grep -qE '^X11Forwarding' "$SSHD_CONF" || echo "X11Forwarding no" >> "$SSHD_CONF"
+
+sed -i 's|^#\?MaxAuthTries.*|MaxAuthTries 3|' "$SSHD_CONF"
+grep -qE '^MaxAuthTries' "$SSHD_CONF" || echo "MaxAuthTries 3" >> "$SSHD_CONF"
+
+sed -i 's|^#\?LoginGraceTime.*|LoginGraceTime 30|' "$SSHD_CONF"
+grep -qE '^LoginGraceTime' "$SSHD_CONF" || echo "LoginGraceTime 30" >> "$SSHD_CONF"
+
+sed -i 's|^#\?AllowAgentForwarding.*|AllowAgentForwarding no|' "$SSHD_CONF"
+grep -qE '^AllowAgentForwarding' "$SSHD_CONF" || echo "AllowAgentForwarding no" >> "$SSHD_CONF"
+
+sed -i 's|^#\?AllowTcpForwarding.*|AllowTcpForwarding no|' "$SSHD_CONF"
+grep -qE '^AllowTcpForwarding' "$SSHD_CONF" || echo "AllowTcpForwarding no" >> "$SSHD_CONF"
+
+sed -i 's|^#\?PermitEmptyPasswords.*|PermitEmptyPasswords no|' "$SSHD_CONF"
+grep -qE '^PermitEmptyPasswords' "$SSHD_CONF" || echo "PermitEmptyPasswords no" >> "$SSHD_CONF"
+
+sed -i 's|^#\?ClientAliveInterval.*|ClientAliveInterval 300|' "$SSHD_CONF"
+grep -qE '^ClientAliveInterval' "$SSHD_CONF" || echo "ClientAliveInterval 300" >> "$SSHD_CONF"
+
+sed -i 's|^#\?ClientAliveCountMax.*|ClientAliveCountMax 2|' "$SSHD_CONF"
+grep -qE '^ClientAliveCountMax' "$SSHD_CONF" || echo "ClientAliveCountMax 2" >> "$SSHD_CONF"
+
+sed -i 's|^#\?LogLevel.*|LogLevel VERBOSE|' "$SSHD_CONF"
+grep -qE '^LogLevel' "$SSHD_CONF" || echo "LogLevel VERBOSE" >> "$SSHD_CONF"
+
+printf 'NEXUS FINANCIAL - AUTHORIZED ACCESS ONLY\n' > /etc/ssh/banner
+printf 'All sessions are monitored and logged.\n' >> /etc/ssh/banner
+printf 'Unauthorized access is prohibited and will be prosecuted.\n' >> /etc/ssh/banner
+sed -i 's|^#\?Banner.*|Banner /etc/ssh/banner|' "$SSHD_CONF"
+grep -qE '^Banner' "$SSHD_CONF" || echo "Banner /etc/ssh/banner" >> "$SSHD_CONF"
 
 systemctl restart ssh
-echo "SSH hardened: PermitRootLogin=no PasswordAuthentication=no" | tee -a "$LOG"
+echo "SSH hardened: PermitRootLogin no PasswordAuthentication no" | tee -a "$LOG"
 
 # 3. KERNEL HARDENING
 echo "Applying kernel hardening parameters..." | tee -a "$LOG"
 SYSCTL_CONF="/etc/sysctl.d/99-nexus-hardening.conf"
-cat > "$SYSCTL_CONF" << 'EOF'
-net.ipv4.conf.all.rp_filter = 1
-net.ipv4.conf.default.rp_filter = 1
-net.ipv4.conf.all.accept_source_route = 0
-net.ipv4.conf.default.accept_source_route = 0
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.default.accept_redirects = 0
-net.ipv6.conf.all.accept_redirects = 0
-net.ipv4.conf.all.send_redirects = 0
-net.ipv4.ip_forward = 0
-net.ipv4.tcp_syncookies = 1
-net.ipv4.conf.all.log_martians = 1
-net.ipv4.conf.default.log_martians = 1
-net.ipv4.icmp_echo_ignore_broadcasts = 1
-net.ipv4.tcp_rfc1337 = 1
-kernel.randomize_va_space = 2
-kernel.dmesg_restrict = 1
-kernel.yama.ptrace_scope = 1
-fs.suid_dumpable = 0
-kernel.kptr_restrict = 2
-EOF
+printf 'net.ipv4.conf.all.rp_filter = 1\n' > "$SYSCTL_CONF"
+printf 'net.ipv4.conf.default.rp_filter = 1\n' >> "$SYSCTL_CONF"
+printf 'net.ipv4.conf.all.accept_source_route = 0\n' >> "$SYSCTL_CONF"
+printf 'net.ipv4.conf.default.accept_source_route = 0\n' >> "$SYSCTL_CONF"
+printf 'net.ipv4.conf.all.accept_redirects = 0\n' >> "$SYSCTL_CONF"
+printf 'net.ipv4.conf.default.accept_redirects = 0\n' >> "$SYSCTL_CONF"
+printf 'net.ipv6.conf.all.accept_redirects = 0\n' >> "$SYSCTL_CONF"
+printf 'net.ipv4.conf.all.send_redirects = 0\n' >> "$SYSCTL_CONF"
+printf 'net.ipv4.ip_forward = 0\n' >> "$SYSCTL_CONF"
+printf 'net.ipv4.tcp_syncookies = 1\n' >> "$SYSCTL_CONF"
+printf 'net.ipv4.conf.all.log_martians = 1\n' >> "$SYSCTL_CONF"
+printf 'net.ipv4.conf.default.log_martians = 1\n' >> "$SYSCTL_CONF"
+printf 'net.ipv4.icmp_echo_ignore_broadcasts = 1\n' >> "$SYSCTL_CONF"
+printf 'net.ipv4.tcp_rfc1337 = 1\n' >> "$SYSCTL_CONF"
+printf 'kernel.randomize_va_space = 2\n' >> "$SYSCTL_CONF"
+printf 'kernel.dmesg_restrict = 1\n' >> "$SYSCTL_CONF"
+printf 'kernel.yama.ptrace_scope = 1\n' >> "$SYSCTL_CONF"
+printf 'fs.suid_dumpable = 0\n' >> "$SYSCTL_CONF"
+printf 'kernel.kptr_restrict = 2\n' >> "$SYSCTL_CONF"
 sysctl -p "$SYSCTL_CONF"
 echo "Kernel parameters applied" | tee -a "$LOG"
 
@@ -93,47 +106,41 @@ echo "Security tools installed" | tee -a "$LOG"
 
 # 6. FAIL2BAN
 echo "Configuring fail2ban..." | tee -a "$LOG"
-cat > /etc/fail2ban/jail.local << 'EOF'
-[DEFAULT]
-bantime  = 3600
-findtime = 600
-maxretry = 3
-backend  = systemd
-
-[sshd]
-enabled  = true
-port     = ssh
-maxretry = 3
-bantime  = 86400
-EOF
+printf '[DEFAULT]\n' > /etc/fail2ban/jail.local
+printf 'bantime  = 3600\n' >> /etc/fail2ban/jail.local
+printf 'findtime = 600\n' >> /etc/fail2ban/jail.local
+printf 'maxretry = 3\n' >> /etc/fail2ban/jail.local
+printf 'backend  = systemd\n' >> /etc/fail2ban/jail.local
+printf '\n' >> /etc/fail2ban/jail.local
+printf '[sshd]\n' >> /etc/fail2ban/jail.local
+printf 'enabled  = true\n' >> /etc/fail2ban/jail.local
+printf 'port     = ssh\n' >> /etc/fail2ban/jail.local
+printf 'maxretry = 3\n' >> /etc/fail2ban/jail.local
+printf 'bantime  = 86400\n' >> /etc/fail2ban/jail.local
 systemctl enable fail2ban
 systemctl restart fail2ban
 echo "Fail2ban configured" | tee -a "$LOG"
 
 # 7. PASSWORD POLICY (PAM pwquality)
 echo "Configuring password policy..." | tee -a "$LOG"
-cat > /etc/security/pwquality.conf << 'EOF'
-minlen = 16
-dcredit = -1
-ucredit = -1
-lcredit = -1
-ocredit = -1
-maxrepeat = 3
-reject_username = yes
-dictcheck = 1
-EOF
+printf 'minlen = 16\n' > /etc/security/pwquality.conf
+printf 'dcredit = -1\n' >> /etc/security/pwquality.conf
+printf 'ucredit = -1\n' >> /etc/security/pwquality.conf
+printf 'lcredit = -1\n' >> /etc/security/pwquality.conf
+printf 'ocredit = -1\n' >> /etc/security/pwquality.conf
+printf 'maxrepeat = 3\n' >> /etc/security/pwquality.conf
+printf 'reject_username = yes\n' >> /etc/security/pwquality.conf
+printf 'dictcheck = 1\n' >> /etc/security/pwquality.conf
 sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS   90/' /etc/login.defs
 sed -i 's/^PASS_MIN_DAYS.*/PASS_MIN_DAYS   1/' /etc/login.defs
 sed -i 's/^PASS_WARN_AGE.*/PASS_WARN_AGE   14/' /etc/login.defs
-echo "Password policy configured" | tee -a "$LOG"
+echo "Password policy configured: minlen 16 PASS_MAX_DAYS 90" | tee -a "$LOG"
 
 # 8. AUTOMATIC SECURITY UPDATES
 echo "Enabling automatic security updates..." | tee -a "$LOG"
-cat > /etc/apt/apt.conf.d/20auto-upgrades << 'EOF'
-APT::Periodic::Update-Package-Lists "1";
-APT::Periodic::Unattended-Upgrade "1";
-APT::Periodic::AutocleanInterval "7";
-EOF
+printf 'APT::Periodic::Update-Package-Lists "1";\n' > /etc/apt/apt.conf.d/20auto-upgrades
+printf 'APT::Periodic::Unattended-Upgrade "1";\n' >> /etc/apt/apt.conf.d/20auto-upgrades
+printf 'APT::Periodic::AutocleanInterval "7";\n' >> /etc/apt/apt.conf.d/20auto-upgrades
 echo "Automatic updates enabled" | tee -a "$LOG"
 
 # 9. FILESYSTEM PERMISSIONS
@@ -143,17 +150,16 @@ chmod 644 /etc/passwd
 chmod 644 /etc/group
 chmod 600 /etc/gshadow
 chmod 700 /root
-[ -d /root/.ssh ] && chmod 700 /root/.ssh
+test -d /root/.ssh && chmod 700 /root/.ssh
 
-# Restrict cron to root
 echo "root" > /etc/cron.allow
-echo "" > /etc/cron.deny 2>/dev/null || true
+printf '' > /etc/cron.deny 2>/dev/null || true
 echo "Filesystem permissions set" | tee -a "$LOG"
 
 # 10. DISABLE USB STORAGE
 echo "Disabling USB storage..." | tee -a "$LOG"
-echo "install usb-storage /bin/true" > /etc/modprobe.d/disable-usb-storage.conf
-echo "blacklist usb-storage" >> /etc/modprobe.d/disable-usb-storage.conf
+printf 'install usb-storage /bin/true\n' > /etc/modprobe.d/disable-usb-storage.conf
+printf 'blacklist usb-storage\n' >> /etc/modprobe.d/disable-usb-storage.conf
 echo "USB storage disabled" | tee -a "$LOG"
 
 echo "System hardening complete" | tee -a "$LOG"
