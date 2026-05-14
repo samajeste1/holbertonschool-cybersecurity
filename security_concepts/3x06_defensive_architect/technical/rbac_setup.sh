@@ -1,222 +1,137 @@
 #!/bin/bash
-# RBAC Setup Script — Nexus Financial
-# Creates groups, users, sudoers rules, and file permissions
+# RBAC Setup Script - Nexus Financial
+# Creates groups, users, sudoers, SSH keys, file permissions
 # Idempotent: safe to run multiple times
 
 set -euo pipefail
 
 LOG="/var/log/nexus_rbac.log"
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting RBAC setup" | tee -a "$LOG"
+echo "Starting RBAC setup" | tee -a "$LOG"
 
-# ──────────────────────────────────────────────
-# HELPER FUNCTIONS
-# ──────────────────────────────────────────────
-create_group_if_missing() {
-    local group="$1"
-    if ! getent group "$group" > /dev/null 2>&1; then
-        groupadd "$group"
-        echo "[+] Created group: $group" | tee -a "$LOG"
-    else
-        echo "[=] Group exists: $group" | tee -a "$LOG"
-    fi
-}
+# Create groups if they do not exist
+if ! getent group sysadmin > /dev/null 2>&1; then
+    groupadd sysadmin
+    echo "Created group sysadmin" | tee -a "$LOG"
+fi
 
-create_user_if_missing() {
-    local user="$1"
-    local group="$2"
-    local comment="$3"
-    if ! id "$user" > /dev/null 2>&1; then
-        useradd -m -s /bin/bash -g "$group" -c "$comment" "$user"
-        mkdir -p "/home/${user}/.ssh"
-        chmod 700 "/home/${user}/.ssh"
-        chown -R "${user}:${group}" "/home/${user}"
-        echo "[+] Created user: $user (group: $group)" | tee -a "$LOG"
-    else
-        echo "[=] User exists: $user" | tee -a "$LOG"
-        usermod -g "$group" "$user" 2>/dev/null || true
-    fi
-}
+if ! getent group devs > /dev/null 2>&1; then
+    groupadd devs
+    echo "Created group devs" | tee -a "$LOG"
+fi
 
-generate_ssh_key() {
-    local user="$1"
-    local keyfile="/home/${user}/.ssh/id_ed25519"
+if ! getent group ops > /dev/null 2>&1; then
+    groupadd ops
+    echo "Created group ops" | tee -a "$LOG"
+fi
+
+if ! getent group auditors > /dev/null 2>&1; then
+    groupadd auditors
+    echo "Created group auditors" | tee -a "$LOG"
+fi
+
+# Create user nexus_admin (sysadmin role)
+if ! id nexus_admin > /dev/null 2>&1; then
+    useradd -m -s /bin/bash -g sysadmin -c "Nexus CISO Account" nexus_admin
+    mkdir -p /home/nexus_admin/.ssh
+    chmod 700 /home/nexus_admin/.ssh
+    echo "Created user nexus_admin" | tee -a "$LOG"
+fi
+
+# Create user sarah (devs role - Lead Developer)
+if ! id sarah > /dev/null 2>&1; then
+    useradd -m -s /bin/bash -g devs -c "Lead Developer" sarah
+    mkdir -p /home/sarah/.ssh
+    chmod 700 /home/sarah/.ssh
+    echo "Created user sarah" | tee -a "$LOG"
+fi
+
+# Create user dave (ops role - CTO read-only)
+if ! id dave > /dev/null 2>&1; then
+    useradd -m -s /bin/bash -g ops -c "CTO Operations Read-Only" dave
+    mkdir -p /home/dave/.ssh
+    chmod 700 /home/dave/.ssh
+    echo "Created user dave" | tee -a "$LOG"
+fi
+
+# Create user auditor (auditors role)
+if ! id auditor > /dev/null 2>&1; then
+    useradd -m -s /bin/bash -g auditors -c "External Auditor Read-Only" auditor
+    mkdir -p /home/auditor/.ssh
+    chmod 700 /home/auditor/.ssh
+    echo "Created user auditor" | tee -a "$LOG"
+fi
+
+# Generate individual SSH keys (replaces shared nexus_master.pem)
+for user in nexus_admin sarah dave; do
+    keyfile="/home/${user}/.ssh/id_ed25519"
     if [ ! -f "$keyfile" ]; then
         sudo -u "$user" ssh-keygen -t ed25519 -f "$keyfile" -N "" -C "${user}@nexus-financial" 2>/dev/null
         cat "${keyfile}.pub" >> "/home/${user}/.ssh/authorized_keys"
         chmod 600 "/home/${user}/.ssh/authorized_keys"
-        chown "${user}:$(id -gn ${user})" "/home/${user}/.ssh/authorized_keys"
-        echo "[+] Generated ed25519 key for $user" | tee -a "$LOG"
-    else
-        echo "[=] SSH key already exists for $user" | tee -a "$LOG"
+        chown -R "${user}" "/home/${user}/.ssh"
+        echo "Generated ed25519 key for ${user}" | tee -a "$LOG"
     fi
-}
+done
 
-# ──────────────────────────────────────────────
-# 1. CREATE GROUPS
-# ──────────────────────────────────────────────
-echo "[*] Creating security groups..." | tee -a "$LOG"
-create_group_if_missing "sysadmin"
-create_group_if_missing "devs"
-create_group_if_missing "ops"
-create_group_if_missing "auditors"
-
-# ──────────────────────────────────────────────
-# 2. CREATE DUMMY USERS (representative role accounts)
-# ──────────────────────────────────────────────
-echo "[*] Creating user accounts..." | tee -a "$LOG"
-
-# sysadmin — interim CISO
-create_user_if_missing "nexus_admin" "sysadmin" "Nexus CISO Account"
-
-# devs — Sarah (Lead Developer) representative
-create_user_if_missing "sarah" "devs" "Lead Developer"
-
-# ops — Dave (CTO) — read-only ops access
-create_user_if_missing "dave" "ops" "CTO - Operations Read-Only"
-
-# auditors — external auditor
-create_user_if_missing "auditor" "auditors" "External Auditor - Read Only"
-
-# ──────────────────────────────────────────────
-# 3. GENERATE SSH KEYS (replaces nexus_master.pem)
-# ──────────────────────────────────────────────
-echo "[*] Generating individual SSH keys (replacing shared nexus_master.pem)..." | tee -a "$LOG"
-generate_ssh_key "nexus_admin"
-generate_ssh_key "sarah"
-generate_ssh_key "dave"
-
-# auditors: no SSH access
-echo "[+] Auditor account: no SSH key (login via application only)" | tee -a "$LOG"
+# Revoke shared nexus_master.pem from all authorized_keys
+for authkeys in /home/*/.ssh/authorized_keys /root/.ssh/authorized_keys; do
+    if [ -f "$authkeys" ]; then
+        sed -i '/nexus_master/d' "$authkeys"
+    fi
+done
+echo "Revoked nexus_master.pem from all authorized_keys" | tee -a "$LOG"
 
 # Disable password login for all managed accounts
 for user in nexus_admin sarah dave auditor; do
     passwd -l "$user" > /dev/null 2>&1 || true
 done
-echo "[+] Password login disabled for all managed accounts" | tee -a "$LOG"
 
-# ──────────────────────────────────────────────
-# 4. REVOKE SHARED MASTER KEY
-# ──────────────────────────────────────────────
-echo "[*] Revoking shared nexus_master.pem from authorized_keys..." | tee -a "$LOG"
-MASTER_KEY_COMMENT="nexus_master"
-for homedir in /home/*/; do
-    AUTH_KEYS="${homedir}.ssh/authorized_keys"
-    if [ -f "$AUTH_KEYS" ]; then
-        # Remove any key with nexus_master in its comment field
-        sed -i "/${MASTER_KEY_COMMENT}/d" "$AUTH_KEYS"
-        echo "[+] Cleaned authorized_keys: $AUTH_KEYS" | tee -a "$LOG"
-    fi
-done
-# Also clean root
-if [ -f /root/.ssh/authorized_keys ]; then
-    sed -i "/${MASTER_KEY_COMMENT}/d" /root/.ssh/authorized_keys
-    echo "[+] Cleaned root authorized_keys" | tee -a "$LOG"
-fi
+# Strict home directory permissions (700)
+chmod 700 /home/nexus_admin
+chmod 700 /home/sarah
+chmod 700 /home/dave
+chmod 700 /home/auditor
+echo "Home directories set to 700" | tee -a "$LOG"
 
-# ──────────────────────────────────────────────
-# 5. HOME DIRECTORY PERMISSIONS
-# ──────────────────────────────────────────────
-echo "[*] Setting strict home directory permissions..." | tee -a "$LOG"
-for user in nexus_admin sarah dave auditor; do
-    if [ -d "/home/${user}" ]; then
-        chmod 700 "/home/${user}"
-        echo "[+] Set /home/${user} to 700" | tee -a "$LOG"
-    fi
-done
-
-# ──────────────────────────────────────────────
-# 6. SUDOERS CONFIGURATION
-# ──────────────────────────────────────────────
-echo "[*] Configuring sudoers (Least Privilege)..." | tee -a "$LOG"
+# Sudoers configuration - least privilege
 SUDOERS_FILE="/etc/sudoers.d/nexus_rbac"
+cat > /tmp/nexus_rbac_sudoers << 'SUDOERS'
+# Nexus Financial RBAC Sudoers Policy
 
-# Validate before writing
-cat > /tmp/nexus_sudoers_tmp << 'SUDOERS'
-# Nexus Financial — RBAC Sudoers Policy
-# Generated by rbac_setup.sh — do not edit manually
-
-# Dangerous commands alias — explicitly denied to non-admins
-Cmnd_Alias NEXUS_DANGER = /bin/rm -rf *, /bin/dd, /usr/bin/shred, /sbin/mkfs, /usr/sbin/shred
-
-# sysadmin — full sudo with password confirmation required
+# sysadmin - full sudo with password
 %sysadmin ALL=(ALL:ALL) ALL
 
-# devs — restart application services only (no password required for specific commands)
-%devs ALL=(root) NOPASSWD: /bin/systemctl restart nginx, /bin/systemctl restart app, /bin/systemctl status nginx, /bin/systemctl status app
-%devs ALL=(root) NOPASSWD: /usr/bin/journalctl -u nginx, /usr/bin/journalctl -u app
+# devs - restart nginx and app services only (no password)
+%devs ALL=(root) NOPASSWD: /bin/systemctl restart nginx
+%devs ALL=(root) NOPASSWD: /bin/systemctl restart app
+%devs ALL=(root) NOPASSWD: /bin/systemctl status nginx
+%devs ALL=(root) NOPASSWD: /bin/systemctl status app
+%devs ALL=(root) NOPASSWD: /usr/bin/journalctl -u nginx
+%devs ALL=(root) NOPASSWD: /usr/bin/journalctl -u app
 
-# ops (Dave) — read logs only, cannot touch config or restart services
-%ops ALL=(root) NOPASSWD: /usr/bin/journalctl, /usr/bin/tail /var/log/*, /usr/bin/cat /var/log/*
+# ops (dave) - read logs only, no service management
+%ops ALL=(root) NOPASSWD: /usr/bin/journalctl
 %ops ALL=(root) NOPASSWD: /bin/systemctl status *
 
-# auditors — read audit logs only
-%auditors ALL=(root) NOPASSWD: /usr/bin/cat /var/log/audit/*, /usr/bin/aureport, /usr/bin/ausearch
+# auditors - read audit logs only
+%auditors ALL=(root) NOPASSWD: /usr/bin/aureport
+%auditors ALL=(root) NOPASSWD: /usr/bin/ausearch
 
-# Explicitly deny dangerous commands for devs and ops
-%devs !NEXUS_DANGER
-%ops !NEXUS_DANGER
-%auditors !NEXUS_DANGER
-
-# No root shell for anyone except sysadmin
-%devs ALL=(root) !NOPASSWD: /bin/bash, /bin/sh, /usr/bin/su
-%ops ALL=(root) !NOPASSWD: /bin/bash, /bin/sh, /usr/bin/su
-%auditors ALL=(root) !NOPASSWD: /bin/bash, /bin/sh, /usr/bin/su
+# Deny root shell to all non-sysadmin roles
+%devs ALL=(root) !/bin/bash, !/bin/sh
+%ops ALL=(root) !/bin/bash, !/bin/sh
+%auditors ALL=(root) !/bin/bash, !/bin/sh
 SUDOERS
 
-# Validate syntax before installing
-if visudo -c -f /tmp/nexus_sudoers_tmp; then
-    cp /tmp/nexus_sudoers_tmp "$SUDOERS_FILE"
+if visudo -c -f /tmp/nexus_rbac_sudoers; then
+    cp /tmp/nexus_rbac_sudoers "$SUDOERS_FILE"
     chmod 440 "$SUDOERS_FILE"
-    echo "[+] Sudoers policy installed: $SUDOERS_FILE" | tee -a "$LOG"
-else
-    echo "[!] Sudoers syntax error — not installed. Check /tmp/nexus_sudoers_tmp" | tee -a "$LOG"
-    exit 1
+    echo "Sudoers policy installed" | tee -a "$LOG"
 fi
-rm -f /tmp/nexus_sudoers_tmp
+rm -f /tmp/nexus_rbac_sudoers
 
-# ──────────────────────────────────────────────
-# 7. SENSITIVE DIRECTORY PERMISSIONS
-# ──────────────────────────────────────────────
-echo "[*] Setting permissions on sensitive directories..." | tee -a "$LOG"
-
-# Logs: readable by ops and auditors, not writable
-if [ -d /var/log ]; then
-    chown -R root:adm /var/log
-    chmod 750 /var/log
-    setfacl -R -m g:ops:rx /var/log 2>/dev/null || true
-    setfacl -R -m g:auditors:rx /var/log/audit 2>/dev/null || true
-    echo "[+] /var/log: ops=rx, auditors=rx on /audit" | tee -a "$LOG"
-fi
-
-# Config files: only sysadmin can write
-if [ -d /etc ]; then
-    setfacl -m g:devs:--- /etc 2>/dev/null || true
-    setfacl -m g:ops:r-x /etc 2>/dev/null || true
-    echo "[+] /etc: devs=none, ops=read-only" | tee -a "$LOG"
-fi
-
-# ──────────────────────────────────────────────
-# 8. LOCK ROOT ACCOUNT
-# ──────────────────────────────────────────────
-echo "[*] Securing root account..." | tee -a "$LOG"
-# Disable direct root login but keep sudo working
+# Lock root account (sudo still works for sysadmin)
 passwd -l root > /dev/null 2>&1 || true
-echo "[+] Root password login disabled (sudo still works for sysadmin)" | tee -a "$LOG"
+echo "Root password login disabled" | tee -a "$LOG"
 
-# Disable root SSH login (also set in hardening.sh but repeated for idempotency)
-sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-systemctl restart ssh 2>/dev/null || true
-
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] RBAC setup complete" | tee -a "$LOG"
-
-# ──────────────────────────────────────────────
-# 9. SUMMARY REPORT
-# ──────────────────────────────────────────────
-echo "" | tee -a "$LOG"
-echo "=== RBAC SUMMARY ===" | tee -a "$LOG"
-echo "Groups created: sysadmin, devs, ops, auditors" | tee -a "$LOG"
-echo "Users created: nexus_admin (sysadmin), sarah (devs), dave (ops), auditor (auditors)" | tee -a "$LOG"
-echo "Shared key nexus_master.pem: REVOKED from all authorized_keys" | tee -a "$LOG"
-echo "Individual ed25519 keys: generated for nexus_admin, sarah, dave" | tee -a "$LOG"
-echo "Sudoers: Least privilege enforced per role" | tee -a "$LOG"
-echo "====================" | tee -a "$LOG"
+echo "RBAC setup complete" | tee -a "$LOG"
