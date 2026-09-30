@@ -88,23 +88,30 @@ def check_port(ip: str, port: int) -> bool:
         return False
 
 
-def get_banner(ip: str, port: int) -> str:
+def get_banner(
+    ip: str, port: int, interface: Optional[str] = None
+) -> str:
     """Connect to *port* on *ip* and return the service banner string.
 
     Sends a port-appropriate probe then reads up to MAX_BANNER_BYTES.
-    For HTTP ports a GET request is sent so the Server header is parsed.
+    For HTTP ports (80, 8080, 8443) a GET request is sent and the
+    Server header value is extracted. Returns 'Unknown' when the HTTP
+    response contains no Server header or when no data arrives.
 
     Args:
         ip: Hostname or IP address of the target.
         port: Open TCP port to grab the banner from.
+        interface: Local IP to bind the socket to, or None.
 
     Returns:
         The banner string stripped of whitespace, or 'Unknown' when no
-        data arrives or an error occurs.
+        data arrives, no Server header is present, or an error occurs.
     """
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(BANNER_TIMEOUT)
+            if interface:
+                sock.bind((interface, 0))
             sock.connect((ip, port))
 
             if port in (80, 8080, 8443):
@@ -126,10 +133,7 @@ def get_banner(ip: str, port: int) -> str:
                 for line in text.splitlines():
                     if line.lower().startswith("server:"):
                         return line.split(":", 1)[1].strip()
-                first = (
-                    text.splitlines()[0].strip() if text.strip() else ""
-                )
-                return first if first else "Unknown"
+                return "Unknown"
 
             first_line = (
                 text.splitlines()[0].strip() if text.strip() else ""
@@ -223,31 +227,33 @@ def scan_ports(
     ip: str,
     start_port: int,
     end_port: int,
-    ports: Optional[List[int]] = None,
     delay: float = 0.0,
     interface: Optional[str] = None,
+    randomise: bool = False,
 ) -> List[Dict]:
     """Scan a port range on *ip* using a ThreadPoolExecutor (max 50 workers).
 
+    Attempts every port from start_port to end_port exactly once. When
+    randomise is True the probe order is shuffled before scanning begins.
     For each open port grabs the banner, falls back to guess_service, and
     flags known vulnerable versions. Prints results as they are found.
 
     Args:
         ip: Target hostname or IP address.
-        start_port: First port inclusive (ignored when *ports* is given).
-        end_port: Last port inclusive (ignored when *ports* is given).
-        ports: Explicit port list (may be shuffled for random mode).
+        start_port: First port to scan (inclusive).
+        end_port: Last port to scan (inclusive).
         delay: Seconds to sleep before each attempt (stealth mode).
-        interface: Local IP to bind sockets to, or None.
+        interface: Local IP to bind every outbound socket to, or None.
+        randomise: If True, shuffle port order before probing.
 
     Returns:
         List of result dicts sorted by port:
         [{"port": int, "state": "open", "service": str,
           "vulnerability": str}, ...]
     """
-    port_list = (
-        ports if ports is not None else list(range(start_port, end_port + 1))
-    )
+    port_list = list(range(start_port, end_port + 1))
+    if randomise:
+        random.shuffle(port_list)
     results: List[Dict] = []
 
     def probe_port(port: int) -> Optional[Dict]:
@@ -261,7 +267,7 @@ def scan_ports(
                     sock.bind((interface, 0))
                 if sock.connect_ex((ip, port)) != 0:
                     return None
-                banner = get_banner(ip, port)
+                banner = get_banner(ip, port, interface=interface)
                 if not banner or banner == "Unknown":
                     service = guess_service(port)
                 else:
@@ -463,10 +469,8 @@ def main() -> None:
     if args.interface:
         print(f"[INFO] Scanning from source IP: {args.interface}")
 
-    port_list = list(range(start_port, end_port + 1))
     if args.random:
         print("Scanning ports randomly...")
-        random.shuffle(port_list)
 
     print(f"[*] Scanning {resolved_ip} from {start_port} to {end_port}...")
 
@@ -475,9 +479,9 @@ def main() -> None:
             ip=resolved_ip,
             start_port=start_port,
             end_port=end_port,
-            ports=port_list,
             delay=args.delay,
             interface=args.interface,
+            randomise=args.random,
         )
     except KeyboardInterrupt:
         print("\n[!] Scan interrupted by user.")
