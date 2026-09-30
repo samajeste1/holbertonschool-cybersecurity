@@ -44,7 +44,9 @@ def parse_port_range(port_range: str) -> Tuple[int, int]:
     return start, end
 
 
-def build_port_list(start: int, end: int, randomise: bool = False) -> List[int]:
+def build_port_list(
+    start: int, end: int, randomise: bool = False
+) -> List[int]:
     """Build the ordered (or shuffled) list of ports to scan.
 
     Args:
