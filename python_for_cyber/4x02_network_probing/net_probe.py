@@ -261,42 +261,9 @@ def scan_ports(
         if delay > 0:
             print(f"[DEBUG] Sleeping {delay}s before next packet...")
             time.sleep(delay)
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-                sock.settimeout(CONNECT_TIMEOUT)
-                if interface:
-                    sock.bind((interface, 0))
-                if sock.connect_ex((ip, port)) != 0:
-                    return None
-                # port is open — grab banner on the same connection
-                if port in (80, 8080, 8443):
-                    sock.sendall(
-                        f"GET / HTTP/1.1\r\nHost: {ip}\r\n\r\n".encode()
-                    )
-                else:
-                    probe = BANNER_PROBES.get(port, b"")
-                    if probe:
-                        sock.sendall(probe)
-                banner = "Unknown"
-                try:
-                    sock.settimeout(BANNER_TIMEOUT)
-                    raw = sock.recv(MAX_BANNER_BYTES)
-                    text = raw.decode("utf-8", errors="replace")
-                    if port in (80, 8080, 8443):
-                        for line in text.splitlines():
-                            if line.lower().startswith("server:"):
-                                banner = line.split(":", 1)[1].strip()
-                                break
-                    else:
-                        first = (
-                            text.splitlines()[0].strip()
-                            if text.strip() else ""
-                        )
-                        banner = first if first else "Unknown"
-                except (socket.timeout, OSError):
-                    banner = "Unknown"
-        except OSError:
+        if not check_port(ip, port):
             return None
+        banner = get_banner(ip, port, interface=interface)
         if not banner or banner == "Unknown":
             service = guess_service(port)
         else:
