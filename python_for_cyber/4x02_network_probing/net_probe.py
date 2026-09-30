@@ -261,14 +261,14 @@ def scan_ports(
         if delay > 0:
             print(f"[DEBUG] Sleeping {delay}s before next packet...")
             time.sleep(delay)
-        if not check_port(ip, port):
-            return None
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                 sock.settimeout(CONNECT_TIMEOUT)
                 if interface:
                     sock.bind((interface, 0))
-                sock.connect((ip, port))
+                if sock.connect_ex((ip, port)) != 0:
+                    return None
+                # port is open — grab banner on the same connection
                 if port in (80, 8080, 8443):
                     sock.sendall(
                         f"GET / HTTP/1.1\r\nHost: {ip}\r\n\r\n".encode()
@@ -277,12 +277,12 @@ def scan_ports(
                     probe = BANNER_PROBES.get(port, b"")
                     if probe:
                         sock.sendall(probe)
+                banner = "Unknown"
                 try:
                     sock.settimeout(BANNER_TIMEOUT)
                     raw = sock.recv(MAX_BANNER_BYTES)
                     text = raw.decode("utf-8", errors="replace")
                     if port in (80, 8080, 8443):
-                        banner = "Unknown"
                         for line in text.splitlines():
                             if line.lower().startswith("server:"):
                                 banner = line.split(":", 1)[1].strip()
@@ -295,24 +295,24 @@ def scan_ports(
                         banner = first if first else "Unknown"
                 except (socket.timeout, OSError):
                     banner = "Unknown"
-                if not banner or banner == "Unknown":
-                    service = guess_service(port)
-                else:
-                    service = banner
-                vuln = check_vulnerability(service)
-                vuln_flag = "YES" if vuln else "NO"
-                print(
-                    f"[+] Port {port} Open: {service}"
-                    + (f" {vuln}" if vuln else "")
-                )
-                return {
-                    "port": port,
-                    "state": "open",
-                    "service": service,
-                    "vulnerability": vuln_flag,
-                }
         except OSError:
             return None
+        if not banner or banner == "Unknown":
+            service = guess_service(port)
+        else:
+            service = banner
+        vuln = check_vulnerability(service)
+        vuln_flag = "YES" if vuln else "NO"
+        print(
+            f"[+] Port {port} Open: {service}"
+            + (f" {vuln}" if vuln else "")
+        )
+        return {
+            "port": port,
+            "state": "open",
+            "service": service,
+            "vulnerability": vuln_flag,
+        }
 
     with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
         futures = [
