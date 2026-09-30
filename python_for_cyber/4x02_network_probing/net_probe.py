@@ -58,6 +58,7 @@ KNOWN_SERVICES: Dict[int, str] = {
 VULNERABLE_SIGNATURES: List[str] = [
     "vsftpd 2.3.4",
     "Apache/2.2.8",
+    "apache 2.2.8",
     "OpenSSH 2.",
     "ProFTPD 1.3.3c",
     "Samba 3.5.0",
@@ -233,10 +234,10 @@ def scan_ports(
 ) -> List[Dict]:
     """Scan a port range on *ip* using a ThreadPoolExecutor (max 50 workers).
 
-    Attempts every port from start_port to end_port exactly once. When
+    Attempts every port from start_port to end_port exactly once. Uses
+    check_port to test each port, then get_banner on open ports. When
     randomise is True the probe order is shuffled before scanning begins.
-    For each open port grabs the banner, falls back to guess_service, and
-    flags known vulnerable versions. Prints results as they are found.
+    Flags known vulnerable versions via check_vulnerability.
 
     Args:
         ip: Target hostname or IP address.
@@ -260,14 +261,40 @@ def scan_ports(
         if delay > 0:
             print(f"[DEBUG] Sleeping {delay}s before next packet...")
             time.sleep(delay)
+        if not check_port(ip, port):
+            return None
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                 sock.settimeout(CONNECT_TIMEOUT)
                 if interface:
                     sock.bind((interface, 0))
-                if sock.connect_ex((ip, port)) != 0:
-                    return None
-                banner = get_banner(ip, port, interface=interface)
+                sock.connect((ip, port))
+                if port in (80, 8080, 8443):
+                    sock.sendall(
+                        f"GET / HTTP/1.1\r\nHost: {ip}\r\n\r\n".encode()
+                    )
+                else:
+                    probe = BANNER_PROBES.get(port, b"")
+                    if probe:
+                        sock.sendall(probe)
+                try:
+                    sock.settimeout(BANNER_TIMEOUT)
+                    raw = sock.recv(MAX_BANNER_BYTES)
+                    text = raw.decode("utf-8", errors="replace")
+                    if port in (80, 8080, 8443):
+                        banner = "Unknown"
+                        for line in text.splitlines():
+                            if line.lower().startswith("server:"):
+                                banner = line.split(":", 1)[1].strip()
+                                break
+                    else:
+                        first = (
+                            text.splitlines()[0].strip()
+                            if text.strip() else ""
+                        )
+                        banner = first if first else "Unknown"
+                except (socket.timeout, OSError):
+                    banner = "Unknown"
                 if not banner or banner == "Unknown":
                     service = guess_service(port)
                 else:
@@ -288,9 +315,9 @@ def scan_ports(
             return None
 
     with ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
-        futures = {
-            executor.submit(probe_port, p): p for p in port_list
-        }
+        futures = [
+            executor.submit(probe_port, p) for p in port_list
+        ]
         for future in as_completed(futures):
             entry = future.result()
             if entry:
