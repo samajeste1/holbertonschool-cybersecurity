@@ -3,6 +3,5 @@ __pycache__/
 *.pyc
 *.pyo
 cache.json
-report.json
 .env
 *.log

@@ -20,8 +20,12 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
-import aiohttp
 import requests
+
+try:
+    import aiohttp
+except ImportError:
+    aiohttp = None
 
 
 BASE_URL = "http://localhost:5000"
@@ -161,7 +165,7 @@ def query_abuseipdb(ip: str) -> Dict:
 # Nmap wrapper (Tasks 3 & 8)
 # ---------------------------------------------------------------------------
 
-NMAP_PORTS = "21,22,25,53,80,110,143,443,445,3306,5432,8080,8443"
+NMAP_PORTS = "22,80"
 
 
 def run_nmap(ip: str) -> str:
@@ -278,18 +282,31 @@ class TargetDossier:
         nmap_raw: Raw Nmap XML output string.
     """
 
-    def __init__(self, ip: str) -> None:
-        """Initialise an empty dossier for *ip*.
+    def __init__(
+        self,
+        ip: str,
+        vt_data: Optional[Dict] = None,
+        abuse_data: Optional[Dict] = None,
+        nmap_ports: Optional[List[int]] = None,
+        shodan_data: Optional[Dict] = None,
+    ) -> None:
+        """Initialise a dossier for *ip*, optionally pre-populated.
 
         Args:
             ip: Target IP address or hostname.
+            vt_data: VirusTotal response dict.
+            abuse_data: AbuseIPDB response dict.
+            nmap_ports: List of open port numbers.
+            shodan_data: Shodan response dict.
         """
         self.ip: str = ip
         self.timestamp: str = datetime.utcnow().isoformat() + "Z"
-        self.vt_data: Optional[Dict] = None
-        self.shodan_data: Optional[Dict] = None
-        self.abuse_data: Optional[Dict] = None
-        self.nmap_ports: List[int] = []
+        self.vt_data: Dict = vt_data if vt_data is not None else {}
+        self.abuse_data: Dict = abuse_data if abuse_data is not None else {}
+        self.nmap_ports: List[int] = (
+            nmap_ports if nmap_ports is not None else []
+        )
+        self.shodan_data: Optional[Dict] = shodan_data
         self.nmap_raw: str = ""
 
     def to_dict(self) -> Dict:
@@ -363,7 +380,7 @@ def _get_semaphore() -> asyncio.Semaphore:
 
 
 async def fetch_api(
-    session: aiohttp.ClientSession, url: str
+    session: "aiohttp.ClientSession", url: str
 ) -> Dict:
     """Fetch a JSON response from *url* using an existing aiohttp session.
 
@@ -527,6 +544,10 @@ def main() -> None:
     if args.target is None:
         parser.print_help()
         return
+
+    if aiohttp is None:
+        print("[ERROR] aiohttp is not installed. Run: pip install aiohttp")
+        sys.exit(1)
 
     try:
         dossier = asyncio.run(
