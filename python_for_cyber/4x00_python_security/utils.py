@@ -12,8 +12,6 @@ import re
 import sys
 from typing import Iterator, List
 
-logger = logging.getLogger("breach_check")
-
 LINE_PATTERN = re.compile(
     r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}"
     r":[^:]+$"
@@ -41,16 +39,16 @@ def read_file(filename: str) -> Iterator[str]:
             for line in fh:
                 yield line
     except FileNotFoundError:
-        logger.error("[ERROR] File not found: %s", filename)
+        logging.error("[ERROR] File not found: %s", filename)
         sys.exit(1)
     except PermissionError:
-        logger.error("[ERROR] Permission denied: %s", filename)
+        logging.error("[ERROR] Permission denied: %s", filename)
         sys.exit(1)
     except IsADirectoryError:
-        logger.error("[ERROR] Is a directory: %s", filename)
+        logging.error("[ERROR] Is a directory: %s", filename)
         sys.exit(1)
     except OSError as exc:
-        logger.error("[ERROR] Could not read %s: %s", filename, exc.strerror)
+        logging.error("[ERROR] Could not read %s: %s", filename, exc.strerror)
         sys.exit(1)
 
 

@@ -13,14 +13,15 @@ Usage:
 
 import argparse
 import configparser
+import hashlib
 import json
 import logging
 import os
+import re
 import sys
 from typing import Dict, List
 
-from utils import clean_data, clean_line, hash_password, validate_line
-from utils import read_file as stream_file
+from utils import read_file as read_file_lazy
 
 CONFIG_FILE = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "config.ini"
@@ -28,22 +29,16 @@ CONFIG_FILE = os.path.join(
 LOG_FILE = "breach_check.log"
 LOG_FORMAT = "%(asctime)s - %(levelname)s - %(message)s"
 
+LINE_PATTERN = re.compile(
+    r"^[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}"
+    r":[^:]+$"
+)
+
 # Policy values. Overwritten by load_config() from config.ini at startup;
 # these defaults only keep check_policy() usable when imported alone.
 SALT = ""
 MIN_LENGTH = 8
 COMMON_PASSWORDS = {"password", "123456", "12345678", "qwerty"}
-
-logger = logging.getLogger("breach_check")
-
-__all__ = [
-    "read_file",
-    "clean_data",
-    "validate_line",
-    "check_policy",
-    "hash_password",
-    "main",
-]
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -53,28 +48,29 @@ def setup_logging(verbose: bool = False) -> None:
         verbose: If True, the console also shows DEBUG messages.
     """
     formatter = logging.Formatter(LOG_FORMAT)
-    logger.setLevel(logging.DEBUG)
-    logger.handlers.clear()
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
+    root_logger.handlers.clear()
 
     console = logging.StreamHandler(sys.stderr)
     console.setLevel(logging.DEBUG if verbose else logging.INFO)
     console.setFormatter(formatter)
-    logger.addHandler(console)
+    root_logger.addHandler(console)
 
     try:
         file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
     except OSError as exc:
-        logger.warning("Cannot write %s (%s)", LOG_FILE, exc.strerror)
+        logging.warning("Cannot write %s (%s)", LOG_FILE, exc.strerror)
         return
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    root_logger.addHandler(file_handler)
 
 
 def load_config(path: str = CONFIG_FILE) -> None:
     """Load the [SECURITY] policy from *path* into the module settings.
 
-    Expected keys: salt, min_length, common_passwords (comma-separated).
+    Expected keys: Salt, MinLength, CommonPasswords (comma-separated).
 
     Args:
         path: Path of the INI configuration file.
@@ -84,29 +80,29 @@ def load_config(path: str = CONFIG_FILE) -> None:
     """
     global SALT, MIN_LENGTH, COMMON_PASSWORDS
     if not os.path.isfile(path):
-        logger.error("[ERROR] Config file missing")
+        logging.error("[ERROR] Config file missing")
         sys.exit(1)
-    parser = configparser.ConfigParser()
+    config = configparser.ConfigParser()
     try:
-        parser.read(path, encoding="utf-8")
-        section = parser["SECURITY"]
-        SALT = section.get("salt", "")
-        MIN_LENGTH = section.getint("min_length", fallback=8)
-        common = section.get("common_passwords", "")
+        config.read(path, encoding="utf-8")
+        section = config["SECURITY"]
+        SALT = section.get("Salt", "")
+        MIN_LENGTH = section.getint("MinLength", fallback=8)
+        common = section.get("CommonPasswords", "")
     except (configparser.Error, KeyError, ValueError) as exc:
-        logger.error("[ERROR] Invalid config file %s: %s", path, exc)
+        logging.error("[ERROR] Invalid config file %s: %s", path, exc)
         sys.exit(1)
-    COMMON_PASSWORDS = {
-        word.strip().lower() for word in common.split(",") if word.strip()
-    }
-    logger.debug("Config loaded: min_length=%d, %d common passwords",
-                 MIN_LENGTH, len(COMMON_PASSWORDS))
+    if common:
+        COMMON_PASSWORDS = {
+            word.strip().lower() for word in common.split(",")
+            if word.strip()
+        }
+    logging.debug("Config loaded: MinLength=%d, %d common passwords",
+                  MIN_LENGTH, len(COMMON_PASSWORDS))
 
 
 def read_file(filename: str) -> List[str]:
     """Read *filename* and return its lines as a list of strings.
-
-    For large files prefer utils.read_file, which yields lazily.
 
     Args:
         filename: Path of the file to read.
@@ -118,14 +114,61 @@ def read_file(filename: str) -> List[str]:
         With code 1 and an [ERROR] message on stderr if the file is
         missing or unreadable.
     """
-    return list(stream_file(filename))
+    try:
+        with open(filename, "r", encoding="utf-8", errors="replace") as fh:
+            return fh.readlines()
+    except FileNotFoundError:
+        logging.error("[ERROR] File not found: %s", filename)
+        sys.exit(1)
+    except PermissionError:
+        logging.error("[ERROR] Permission denied: %s", filename)
+        sys.exit(1)
+    except IsADirectoryError:
+        logging.error("[ERROR] Is a directory: %s", filename)
+        sys.exit(1)
+    except OSError as exc:
+        logging.error("[ERROR] Could not read %s: %s", filename, exc.strerror)
+        sys.exit(1)
+
+
+def clean_data(lines: List[str]) -> List[str]:
+    """Remove surrounding whitespace, empty lines and # comments.
+
+    Args:
+        lines: Raw lines, e.g. [' user@mail.com:pass ', '', '# Comment'].
+
+    Returns:
+        The cleaned lines, e.g. ['user@mail.com:pass'].
+    """
+    cleaned_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        cleaned_lines.append(stripped)
+    return cleaned_lines
+
+
+def validate_line(line: str) -> bool:
+    """Check that *line* follows exactly the format email:password.
+
+    Args:
+        line: A cleaned line.
+
+    Returns:
+        True if the part before the single ':' looks like an email and
+        a non-empty password follows, False otherwise.
+    """
+    if not isinstance(line, str):
+        return False
+    return re.match(LINE_PATTERN, line) is not None
 
 
 def check_policy(password: str) -> str:
     """Audit *password* against the complexity policy.
 
-    A password is WEAK if it is shorter than MIN_LENGTH, contains no
-    digit (letters only), contains only digits, or is in the common
+    A password is WEAK if it is shorter than MIN_LENGTH, contains only
+    letters (no digit), contains only digits, or is in the common
     password list.
 
     Args:
@@ -134,18 +177,38 @@ def check_policy(password: str) -> str:
     Returns:
         'WEAK' or 'COMPLIANT'.
     """
-    if (
-        len(password) < MIN_LENGTH
-        or not any(char.isdigit() for char in password)
-        or password.isdigit()
-        or password.lower() in COMMON_PASSWORDS
-    ):
+    if len(password) < MIN_LENGTH:
+        return "WEAK"
+    if password.isalpha() or not any(char.isdigit() for char in password):
+        return "WEAK"
+    if password.isdigit():
+        return "WEAK"
+    if password.lower() in COMMON_PASSWORDS:
         return "WEAK"
     return "COMPLIANT"
 
 
+def hash_password(password: str, salt: str) -> str:
+    """Return the salted SHA-256 hex digest of *password*.
+
+    Process: encode the password, append the encoded salt, hash with
+    SHA-256, return the hexdigest.
+
+    Args:
+        password: Cleartext password.
+        salt: Salt string appended to the password before hashing.
+
+    Returns:
+        A 64-character lowercase hexadecimal string.
+    """
+    return hashlib.sha256(password.encode() + salt.encode()).hexdigest()
+
+
 def audit_file(filename: str) -> Dict:
     """Stream *filename* and audit every valid email:password line.
+
+    Lines are read lazily (utils.read_file generator) so memory use
+    stays flat even for huge files.
 
     Args:
         filename: Path of the leak file.
@@ -156,15 +219,16 @@ def audit_file(filename: str) -> Dict:
     """
     stats = {"total_lines": 0, "valid": 0, "invalid": 0, "weak": 0}
     weak_accounts = []
-    for line_number, raw_line in enumerate(stream_file(filename), start=1):
+    for line_number, raw_line in enumerate(read_file_lazy(filename), 1):
         stats["total_lines"] += 1
-        line = clean_line(raw_line)
-        if not line:
+        cleaned = clean_data([raw_line])
+        if not cleaned:
             continue
-        logger.debug("Starting regex check on line %d...", line_number)
+        line = cleaned[0]
+        logging.debug("Starting regex check on line %d...", line_number)
         if not validate_line(line):
             stats["invalid"] += 1
-            logger.debug("Line %d skipped: invalid format", line_number)
+            logging.debug("Line %d skipped: invalid format", line_number)
             continue
         stats["valid"] += 1
         email, password = line.split(":", 1)
@@ -193,9 +257,10 @@ def save_report(report: Dict, path: str) -> None:
             json.dump(report, fh, indent=2)
             fh.write("\n")
     except OSError as exc:
-        logger.error("[ERROR] Cannot write report %s: %s", path, exc.strerror)
+        logging.error("[ERROR] Cannot write report %s: %s",
+                      path, exc.strerror)
         sys.exit(1)
-    logger.info("Report generated: %s", path)
+    logging.info("Report generated: %s", path)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -226,18 +291,18 @@ def main() -> None:
     setup_logging(args.verbose)
     load_config()
     try:
-        logger.info("Processing file %s...", args.file)
+        logging.info("Processing file %s...", args.file)
         report = audit_file(args.file)
     except KeyboardInterrupt:
-        logger.error("[ERROR] Interrupted by user")
+        logging.error("[ERROR] Interrupted by user")
         sys.exit(130)
     stats = report["stats"]
-    logger.info("%d valid lines, %d invalid lines skipped",
-                stats["valid"], stats["invalid"])
+    logging.info("%d valid lines, %d invalid lines skipped",
+                 stats["valid"], stats["invalid"])
     if stats["weak"]:
-        logger.warning("[ALERT] %d weak passwords found.", stats["weak"])
+        logging.warning("[ALERT] %d weak passwords found.", stats["weak"])
     else:
-        logger.info("No weak passwords found.")
+        logging.info("No weak passwords found.")
     if args.output:
         save_report(report, args.output)
 
