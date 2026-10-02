@@ -1,41 +1,27 @@
 #!/usr/bin/env python3
 """
-models.py - Data model for IntelBroker.
+models.py - Data model base for IntelBroker.
 
-Defines TargetDossier, the central data object that aggregates
-intelligence from VirusTotal, Shodan, AbuseIPDB, and Nmap.
+Defines BaseDossier, which holds the serialisation (JSON report) and
+display (console summary) logic shared by TargetDossier.
 """
 
-from datetime import datetime
 from typing import Dict, List, Optional
 
 
-class TargetDossier:
-    """Aggregated intelligence record for a single target IP or hostname.
+class BaseDossier:
+    """Serialisation and display logic for an intelligence dossier.
 
-    Attributes:
-        ip: The target IP address or hostname.
-        timestamp: ISO-8601 string recording when the dossier was created.
-        vt_data: VirusTotal response dict, or None if not yet queried.
-        shodan_data: Shodan response dict, or None if not yet queried.
-        abuse_data: AbuseIPDB response dict, or None if not yet queried.
-        nmap_ports: List of open port numbers found by Nmap.
-        nmap_raw: Raw Nmap XML output string.
+    Subclasses must set: ip, timestamp, vt_data, shodan_data,
+    abuse_data and nmap_ports.
     """
 
-    def __init__(self, ip: str) -> None:
-        """Initialise an empty dossier for *ip*.
-
-        Args:
-            ip: Target IP address or hostname.
-        """
-        self.ip: str = ip
-        self.timestamp: str = datetime.utcnow().isoformat() + "Z"
-        self.vt_data: Optional[Dict] = None
-        self.shodan_data: Optional[Dict] = None
-        self.abuse_data: Optional[Dict] = None
-        self.nmap_ports: List[int] = []
-        self.nmap_raw: str = ""
+    ip: str
+    timestamp: str
+    vt_data: Dict
+    shodan_data: Optional[Dict]
+    abuse_data: Dict
+    nmap_ports: List[int]
 
     def to_dict(self) -> Dict:
         """Serialise the dossier to a JSON-compatible dictionary.

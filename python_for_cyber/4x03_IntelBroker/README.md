@@ -34,6 +34,7 @@ Run IntelBroker:
 | `api_client.py` | Async HTTP logic (aiohttp, cache, rate limiter) |
 | `scanner.py` | Nmap wrapper + XML parser |
 | `models.py` | TargetDossier data model |
+| `utils.py` | JSON file cache helpers |
 | `mock_api.py` | Local mock server for VirusTotal/Shodan/AbuseIPDB |
 
 ## API keys
