@@ -80,7 +80,8 @@ def load_config(path: str = CONFIG_FILE) -> None:
     """
     global SALT, MIN_LENGTH, COMMON_PASSWORDS
     if not os.path.isfile(path):
-        logging.error("[ERROR] Config file missing")
+        logging.error("[ERROR] Config file missing: %s",
+                      os.path.basename(path))
         sys.exit(1)
     config = configparser.ConfigParser()
     try:
