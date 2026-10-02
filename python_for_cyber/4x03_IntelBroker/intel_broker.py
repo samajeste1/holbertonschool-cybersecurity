@@ -22,15 +22,31 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Dict, List, Optional
 
-from api_client import BASE_URL, aiohttp, fetch_api
-from models import BaseDossier
-from scanner import NMAP_PORTS, run_nmap_async
-from utils import cache_get, cache_set
-
 try:
     import requests
 except ImportError:
     requests = None
+
+# The project modules are imported defensively so that the task 1-5
+# functions below stay importable even when this file is used alone.
+try:
+    from models import BaseDossier
+except ImportError:
+    BaseDossier = object
+
+try:
+    from utils import cache_get, cache_set
+except ImportError:
+    def cache_get(key: str) -> Optional[Dict]:
+        """Fallback when utils.py is missing: cache always misses."""
+        return None
+
+    def cache_set(key: str, data: Dict) -> None:
+        """Fallback when utils.py is missing: do not cache."""
+        return None
+
+BASE_URL = "http://localhost:5000"
+NMAP_PORTS = "22,80"
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +215,7 @@ class TargetDossier(BaseDossier):
 
     def __init__(
         self,
-        ip: str,
+        ip: str = "",
         vt_data: Optional[Dict] = None,
         abuse_data: Optional[Dict] = None,
         nmap_ports: Optional[List[int]] = None,
@@ -242,6 +258,9 @@ async def run_intel(ip: str, verbose: bool = False) -> TargetDossier:
     Returns:
         A fully populated TargetDossier instance.
     """
+    from api_client import aiohttp, fetch_api
+    from scanner import run_nmap_async
+
     dossier = TargetDossier(ip)
 
     if verbose:
@@ -332,7 +351,12 @@ def main() -> None:
         parser.print_help()
         return
 
-    if aiohttp is None:
+    try:
+        import api_client
+    except ImportError as exc:
+        print(f"[ERROR] Missing project module: {exc}")
+        sys.exit(1)
+    if api_client.aiohttp is None:
         print("[ERROR] aiohttp is not installed. Run: pip install aiohttp")
         sys.exit(1)
 
