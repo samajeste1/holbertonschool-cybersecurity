@@ -1,2 +1,2 @@
 #!/bin/bash
-printf "%d.%d.%d.%d" "$((($1>0?(0xFFFFFFFF<<(32-$1))&0xFFFFFFFF:0)>>24&255))" "$((($1>0?(0xFFFFFFFF<<(32-$1))&0xFFFFFFFF:0)>>16&255))" "$((($1>0?(0xFFFFFFFF<<(32-$1))&0xFFFFFFFF:0)>>8&255))" "$((($1>0?(0xFFFFFFFF<<(32-$1))&0xFFFFFFFF:0)&255))"
+m=$(( (0xFFFFFFFF << (32 - $1)) & 0xFFFFFFFF )); echo "$((m >> 24 & 255)).$((m >> 16 & 255)).$((m >> 8 & 255)).$((m & 255))"

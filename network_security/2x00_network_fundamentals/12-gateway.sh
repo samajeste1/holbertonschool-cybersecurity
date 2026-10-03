@@ -1,2 +1,2 @@
 #!/bin/bash
-ip route | awk '/^default/ {print $3}'
+ip route | awk '/^default/ { print $3; exit }'

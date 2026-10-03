@@ -1,2 +1,2 @@
 #!/bin/bash
-echo "$1" | awk -F. '{for(i=1;i<=4;i++){b="";n=$i;for(j=7;j>=0;j--){b=b int(n/2^j)%2};printf b (i<4?".":" ")}printf "\n"}'
+IFS=. read -r o1 o2 o3 o4 <<< "$1"; r=""; for o in "$o1" "$o2" "$o3" "$o4"; do b=""; for i in {1..8}; do b=$((o % 2))$b; o=$((o / 2)); done; r="$r.$b"; done; echo "${r#.}"
