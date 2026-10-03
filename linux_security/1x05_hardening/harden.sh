@@ -103,7 +103,7 @@ for module in network ssh identity system; do
     source "$SCRIPT_DIR/lib/$module.sh"
 done
 
-log INFO "Hardening framework initialized."
+log INFO "Hardening framework initialized"
 
 harden_network
 harden_ssh

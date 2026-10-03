@@ -29,6 +29,21 @@ harden_ssh() {
     set_option "$SSH_CONFIG" "PermitRootLogin" " " "no"
     set_option "$SSH_CONFIG" "Port" " " "$SSH_PORT"
 
+    # Drop-in files (e.g. 50-cloud-init.conf) are read first and win:
+    # align any of them that redefines a hardened setting.
+    local dropin key value
+    for dropin in "$SSH_CONFIG_DIR"/*.conf; do
+        [ -f "$dropin" ] || continue
+        for key in PasswordAuthentication:no PubkeyAuthentication:yes PermitRootLogin:no; do
+            value="${key#*:}"
+            key="${key%%:*}"
+            if grep -qE "^[[:space:]]*${key}\b" "$dropin"; then
+                set_option "$dropin" "$key" " " "$value"
+                log INFO "SSH drop-in aligned: $key $value in $dropin"
+            fi
+        done
+    done
+
     # sshd -t needs the privilege separation directory.
     mkdir -p /run/sshd 2>/dev/null
     if ! sshd -t >> "$LOG_FILE" 2>&1; then

@@ -61,11 +61,32 @@ install_required_tools() {
     fi
 }
 
+# Enable and start the services provided by REQUIRED_TOOLS.
+enable_required_services() {
+    local enabled=() service
+    if ! command -v systemctl > /dev/null; then
+        log WARN "systemctl not available: services not enabled."
+        return
+    fi
+    for service in $REQUIRED_TOOLS; do
+        is_installed "$service" || continue
+        if systemctl enable --now "$service" >> "$LOG_FILE" 2>&1; then
+            enabled+=("$service")
+        else
+            log WARN "Could not enable service: $service"
+        fi
+    done
+    if [ "${#enabled[@]}" -gt 0 ]; then
+        report "Services enabled: $(join_by ", " "${enabled[@]}")."
+    fi
+}
+
 harden_system() {
     log INFO "Starting system hardening."
     update_packages
     remove_bloatware
     install_required_tools
+    enable_required_services
 }
 
 # Write the audit report to REPORT_PATH: every recorded change, then

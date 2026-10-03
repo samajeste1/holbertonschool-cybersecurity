@@ -13,25 +13,82 @@ enforce_password_policy() {
             return 1
         fi
     fi
-    set_option "$PWQUALITY_CONF" "minlen" " = " "$PASS_MIN_LEN" &&
-        set_option "$PWQUALITY_CONF" "minclass" " = " "$PASS_MIN_CLASS" &&
-        set_option "$LOGIN_DEFS" "PASS_MAX_DAYS" $'\t' "$PASS_MAX_DAYS" &&
-        report "Password policy enforced: minlen=${PASS_MIN_LEN}, minclass=${PASS_MIN_CLASS}, max age=${PASS_MAX_DAYS} days."
-}
 
-# I-02: lock accounts after FAIL_LOCK_ATTEMPTS failed logins.
-enforce_account_lockout() {
-    set_option "$FAILLOCK_CONF" "deny" " = " "$FAIL_LOCK_ATTEMPTS" || return 1
-    report "Account lockout set to ${FAIL_LOCK_ATTEMPTS} failed attempts."
-    if ! grep -q "pam_faillock" "$PAM_COMMON_AUTH" 2>/dev/null; then
-        log WARN "pam_faillock is not enabled in $PAM_COMMON_AUTH: lockout not active."
+    # Complexity: minimum length + at least one upper, lower, digit, special.
+    local option
+    set_option "$PWQUALITY_CONF" "minlen" " = " "$PASS_MIN_LEN" || return 1
+    set_option "$PWQUALITY_CONF" "minclass" " = " "$PASS_MIN_CLASS"
+    for option in ucredit lcredit dcredit ocredit; do
+        set_option "$PWQUALITY_CONF" "$option" " = " "-1"
+    done
+
+    # Same rules on the PAM line itself (/etc/pam.d/common-password).
+    local pam_args="retry=3 minlen=${PASS_MIN_LEN} ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1 enforce_for_root"
+    if grep -qE '^[[:space:]]*password[[:space:]].*pam_pwquality\.so' "$PAM_COMMON_PASSWORD" 2>/dev/null; then
+        [ -f "${PAM_COMMON_PASSWORD}.orig" ] || cp -p "$PAM_COMMON_PASSWORD" "${PAM_COMMON_PASSWORD}.orig"
+        sed -i -E "s|^([[:space:]]*password[[:space:]]+[^[:space:]]+[[:space:]]+pam_pwquality\.so).*|\1 ${pam_args}|" \
+            "$PAM_COMMON_PASSWORD"
+    else
+        log ERROR "pam_pwquality.so not found in $PAM_COMMON_PASSWORD."
+        return 1
     fi
+
+    # Aging.
+    set_option "$LOGIN_DEFS" "PASS_MAX_DAYS" $'\t' "$PASS_MAX_DAYS" || return 1
+    set_option "$LOGIN_DEFS" "PASS_MIN_LEN" $'\t' "$PASS_MIN_LEN"
+
+    report "Password policy enforced: minlen=${PASS_MIN_LEN}, upper+lower+digit+special required, max age=${PASS_MAX_DAYS} days."
 }
 
-# is_authorized USER - true if USER must be kept.
-is_authorized() {
+# I-02: lock accounts after FAIL_LOCK_ATTEMPTS failed logins
+# (pam_faillock in common-auth and common-account).
+enforce_account_lockout() {
+    local options="deny=${FAIL_LOCK_ATTEMPTS} unlock_time=${FAIL_LOCK_UNLOCK_TIME}"
+    local tmp
+
+    set_option "$FAILLOCK_CONF" "deny" " = " "$FAIL_LOCK_ATTEMPTS" || return 1
+    set_option "$FAILLOCK_CONF" "unlock_time" " = " "$FAIL_LOCK_UNLOCK_TIME"
+
+    if [ ! -f "$PAM_COMMON_AUTH" ] || [ ! -f "$PAM_COMMON_ACCOUNT" ]; then
+        log ERROR "PAM files missing: $PAM_COMMON_AUTH / $PAM_COMMON_ACCOUNT"
+        return 1
+    fi
+    [ -f "${PAM_COMMON_AUTH}.orig" ] || cp -p "$PAM_COMMON_AUTH" "${PAM_COMMON_AUTH}.orig"
+
+    # Drop any previous pam_faillock line, then wrap pam_unix with the
+    # preauth / authfail / authsucc lines (same result on every run).
+    tmp=$(mktemp) || { log ERROR "mktemp failed."; return 1; }
+    if awk -v opts="$options" '
+        /pam_faillock\.so/ { next }
+        /^auth[[:space:]].*pam_unix\.so/ && !done {
+            print "auth\trequired\t\t\tpam_faillock.so preauth " opts
+            print
+            print "auth\t[default=die]\t\t\tpam_faillock.so authfail " opts
+            print "auth\tsufficient\t\t\tpam_faillock.so authsucc " opts
+            done = 1
+            next
+        }
+        { print }
+        END { exit done ? 0 : 1 }' "$PAM_COMMON_AUTH" > "$tmp"; then
+        cat "$tmp" > "$PAM_COMMON_AUTH"
+    else
+        rm -f "$tmp"
+        log ERROR "pam_unix.so not found in $PAM_COMMON_AUTH: lockout not configured."
+        return 1
+    fi
+    rm -f "$tmp"
+
+    if ! grep -q "pam_faillock\.so" "$PAM_COMMON_ACCOUNT"; then
+        printf 'account\trequired\t\t\tpam_faillock.so\n' >> "$PAM_COMMON_ACCOUNT"
+    fi
+    report "Account lockout set to ${FAIL_LOCK_ATTEMPTS} failed attempts (pam_faillock, unlock after ${FAIL_LOCK_UNLOCK_TIME}s)."
+}
+
+# is_protected USER - true if USER must be kept (SSH users, the admin
+# running the script, members of an admin group).
+is_protected() {
     local user="$1" allowed group
-    for allowed in $AUTHORIZED_USERS $ALLOWED_SSH_USERS ${SUDO_USER:-}; do
+    for allowed in $ALLOWED_SSH_USERS ${SUDO_USER:-}; do
         [ "$user" = "$allowed" ] && return 0
     done
     for group in $ADMIN_GROUPS; do
@@ -40,12 +97,12 @@ is_authorized() {
     return 1
 }
 
-# I-03: delete regular accounts that are not authorized.
+# I-03: delete users with UID > USER_UID_THRESHOLD not in sudo/wheel.
 remove_unauthorized_users() {
     local candidates=() removed=() username uid
     while IFS=: read -r username _ uid _; do
-        [ "$uid" -ge "$MIN_USER_UID" ] && [ "$uid" -lt 65534 ] || continue
-        is_authorized "$username" || candidates+=("$username")
+        [ "$uid" -gt "$USER_UID_THRESHOLD" ] && [ "$uid" -lt "$NOBODY_UID" ] || continue
+        is_protected "$username" || candidates+=("$username")
     done < "$PASSWD_FILE"
 
     for username in "${candidates[@]}"; do
@@ -60,7 +117,7 @@ remove_unauthorized_users() {
 
     if [ "${#removed[@]}" -gt 0 ]; then
         report "${#removed[@]} unauthorized users removed: $(join_by ", " "${removed[@]}")."
-    else
+    elif [ "${#candidates[@]}" -eq 0 ]; then
         report "0 unauthorized users removed (none found)."
     fi
 }

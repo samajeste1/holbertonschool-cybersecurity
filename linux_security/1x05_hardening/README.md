@@ -35,12 +35,14 @@ hardening/
 |---|---|
 | N-01/N-02 | Firewall policy file: default inbound deny, SSH/80/443 allowed |
 | N-03 | `net.ipv4.ip_forward=0`, `net.ipv4.icmp_echo_ignore_all=1` |
-| S-01/S-02 | SSH on custom port, `PasswordAuthentication no`, `PubkeyAuthentication yes`, `PermitRootLogin no` (validated with `sshd -t`, effective values checked with `sshd -T`) |
-| I-01 | pam_pwquality: `minlen`, `minclass`; `PASS_MAX_DAYS` in login.defs |
-| I-02 | faillock: `deny` after N failed attempts |
-| I-03 | Removal of regular accounts not in `AUTHORIZED_USERS` and not in an admin group |
+| S-01/S-02 | SSH on custom port, `PasswordAuthentication no`, `PubkeyAuthentication yes`, `PermitRootLogin no` in `sshd_config` and in any `sshd_config.d/*.conf` that overrides them (validated with `sshd -t`, effective values checked with `sshd -T`) |
+| I-01 | `pam_pwquality` in `/etc/pam.d/common-password` and `pwquality.conf`: `minlen=12`, `ucredit/lcredit/dcredit/ocredit=-1` (upper, lower, digit, special); `PASS_MAX_DAYS 90` in `login.defs` |
+| I-02 | `pam_faillock` in `common-auth`/`common-account`, `deny=5` (also in `faillock.conf`) |
+| I-03 | Deletion of users with UID > 1000 not in `sudo`/`wheel` (`ALLOWED_SSH_USERS` and the admin running the script are always kept) |
 | I-04 | Root password locked |
-| H-01..03 | Package updates, removal of `BLOATWARE`, installation of `REQUIRED_TOOLS` |
+| H-01..03 | Non-interactive update/upgrade, purge of `BLOATWARE`, installation and activation of `REQUIRED_TOOLS` |
+
+PAM and SSH files are backed up once (`*.orig`) before their first modification.
 
 ## Logging and audit report
 
