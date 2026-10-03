@@ -145,22 +145,30 @@ def parse_syslog_line(line: str) -> Optional[Dict[str, str]]:
 # Task 3 - The Normalizer
 # ---------------------------------------------------------------------------
 
+def to_status(value: Any) -> Optional[int]:
+    """Return *value* as an int HTTP status, or None if not a number."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class LogEntry:
     """A log event normalized to a common structure.
 
     Common attributes: ip, timestamp, service ('http' or 'ssh'),
     message, raw_line. Apache entries also carry method, path, status
-    (int) and user_agent. Enrichment and detection add country, is_bot,
-    alert_level and attack_type.
+    (int) and user_agent; for syslog entries these are None.
+    Enrichment and detection add country, is_bot, alert_level and
+    attack_type.
     """
 
-    __slots__ = ('ip', 'timestamp', 'service', 'message', 'raw_line',
-                 'method', 'path', 'status', 'user_agent',
-                 'country', 'is_bot', 'alert_level', 'attack_type')
-
-    def __init__(self, ip: str, timestamp: str, service: str,
-                 message: str, raw_line: str = '') -> None:
-        """Create an entry with the common attributes.
+    def __init__(self, ip: str = '', timestamp: str = '',
+                 service: str = '', message: str = '',
+                 raw_line: str = '', method: Optional[str] = None,
+                 path: Optional[str] = None, status: Any = None,
+                 user_agent: Optional[str] = None, **extra: Any) -> None:
+        """Create an entry.
 
         Args:
             ip: Source IP address ('' if unknown).
@@ -168,18 +176,30 @@ class LogEntry:
             service: 'http' for Apache, 'ssh' for syslog.
             message: Descriptive content of the event.
             raw_line: The original log line.
+            method: HTTP method (Apache only).
+            path: Requested URL path (Apache only).
+            status: HTTP status code, stored as int (Apache only).
+            user_agent: User-Agent string (Apache only).
+            **extra: Any additional attribute (country, is_bot...).
         """
-        self.ip = ip
+        self.ip = ip or ''
         self.timestamp = timestamp
         self.service = service
-        self.message = message
-        self.raw_line = raw_line
+        self.message = message or ''
+        self.raw_line = raw_line or ''
+        self.method = method
+        self.path = path
+        self.status = to_status(status)
+        self.user_agent = user_agent
         self.attack_type = None
+        for name, value in extra.items():
+            setattr(self, name, value)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Return the attributes that are set, as a JSON-ready dict."""
-        return {name: getattr(self, name) for name in self.__slots__
-                if hasattr(self, name)}
+        """Return the entry's attributes as a JSON-ready dict."""
+        return {name: (value.isoformat() if isinstance(value, datetime)
+                       else value)
+                for name, value in vars(self).items()}
 
 
 def normalize_entry(parsed_dict: Dict[str, str], log_type: str,
@@ -195,18 +215,17 @@ def normalize_entry(parsed_dict: Dict[str, str], log_type: str,
         The normalized LogEntry.
     """
     if log_type == 'apache':
-        entry = LogEntry(
+        return LogEntry(
             ip=parsed_dict['ip'],
             timestamp=parsed_dict['date'],
             service='http',
             message=f"{parsed_dict['method']} {parsed_dict['path']}",
             raw_line=raw_line,
+            method=parsed_dict['method'],
+            path=parsed_dict['path'],
+            status=parsed_dict['status'],
+            user_agent=parsed_dict.get('user_agent') or '',
         )
-        entry.method = parsed_dict['method']
-        entry.path = parsed_dict['path']
-        entry.status = int(parsed_dict['status'])
-        entry.user_agent = parsed_dict.get('user_agent') or ''
-        return entry
 
     message = parsed_dict['message']
     ip_match = IP_PATTERN.search(message)
@@ -225,7 +244,7 @@ def normalize_entry(parsed_dict: Dict[str, str], log_type: str,
 
 def has_status(entry: LogEntry, status_codes: Iterable[int]) -> bool:
     """Return True if *entry* has a status listed in *status_codes*."""
-    status = getattr(entry, 'status', None)
+    status = to_status(getattr(entry, 'status', None))
     return status is not None and status in status_codes
 
 
@@ -263,8 +282,9 @@ def analyze_user_agent(log_entry: LogEntry) -> LogEntry:
     The user_agent, message and raw_line fields are searched,
     case-insensitively, for sqlmap, nikto, curl and python.
     """
-    haystack = ' '.join((getattr(log_entry, 'user_agent', ''),
-                         log_entry.message, log_entry.raw_line)).lower()
+    haystack = ' '.join(str(getattr(log_entry, field, '') or '')
+                        for field in ('user_agent', 'message', 'raw_line')
+                        ).lower()
     log_entry.is_bot = any(sig in haystack for sig in BOT_SIGNATURES)
     return log_entry
 
@@ -301,7 +321,7 @@ def detect_sqli(log_entry: LogEntry) -> LogEntry:
 
 def detect_xss(log_entry: LogEntry) -> LogEntry:
     """Set log_entry.attack_type = 'XSS' unless SQLi was already found."""
-    if log_entry.attack_type == 'SQLi':
+    if getattr(log_entry, 'attack_type', None) == 'SQLi':
         return log_entry
     path = _decoded_path(log_entry)
     if path and any(sig.search(path) for sig in XSS_SIGNATURES):
@@ -351,8 +371,8 @@ class BruteForceDetector:
         """Account for one entry."""
         if not entry.ip:
             return
-        if (getattr(entry, 'status', None) == 401
-                or 'Failed password' in entry.message):
+        if (to_status(getattr(entry, 'status', None)) == 401
+                or 'Failed password' in (entry.message or '')):
             self.failures[entry.ip] += 1
 
     def alerts(self) -> Iterator[Dict[str, Any]]:
@@ -376,28 +396,41 @@ def detect_bruteforce(entries: Iterable[LogEntry]
 # Task 11 - The Rate Limiter
 # ---------------------------------------------------------------------------
 
+def _to_naive_utc(moment: datetime) -> datetime:
+    """Convert an aware datetime to naive UTC (naive ones are kept)."""
+    if moment.tzinfo is not None:
+        return moment.astimezone(timezone.utc).replace(tzinfo=None)
+    return moment
+
+
 @lru_cache(maxsize=65536)
-def parse_timestamp(timestamp: str) -> Optional[datetime]:
+def parse_timestamp(timestamp: Any) -> Optional[datetime]:
     """Parse an Apache or syslog timestamp into a naive UTC datetime.
 
-    Syslog has no year: the current year is assumed. Results are cached
-    because consecutive log lines share the same second.
+    Accepted: '11/Feb/2026:14:01:24 +0000' (Apache), 'Feb 11 14:31:24'
+    (syslog, current year assumed), ISO 8601, or a datetime object.
+    Results are cached because consecutive lines share the same second.
 
     Returns:
-        The datetime, or None if the format is unknown.
+        The datetime, or None if the value cannot be parsed.
     """
+    if isinstance(timestamp, datetime):
+        return _to_naive_utc(timestamp)
+    if not isinstance(timestamp, str) or not timestamp.strip():
+        return None
     for time_format in APACHE_TIME_FORMATS:
         try:
-            moment = datetime.strptime(timestamp, time_format)
+            return _to_naive_utc(datetime.strptime(timestamp, time_format))
         except ValueError:
             continue
-        if moment.tzinfo is not None:
-            moment = moment.astimezone(timezone.utc).replace(tzinfo=None)
-        return moment
     try:
         compact = WHITESPACE_PATTERN.sub(' ', timestamp.strip())
         return datetime.strptime(f'{datetime.now().year} {compact}',
                                  SYSLOG_TIME_FORMAT)
+    except ValueError:
+        pass
+    try:
+        return _to_naive_utc(datetime.fromisoformat(timestamp.strip()))
     except ValueError:
         return None
 
@@ -457,9 +490,9 @@ class EventCorrelator:
         """Account for one entry; return a CRITICAL INCIDENT if complete."""
         if not entry.ip:
             return None
-        if getattr(entry, 'status', None) == 404:
+        if to_status(getattr(entry, 'status', None)) == 404:
             self.state[entry.ip].add('scanner')
-        if entry.attack_type == 'SQLi':
+        if getattr(entry, 'attack_type', None) == 'SQLi':
             self.state[entry.ip].add('sqli')
         if {'scanner', 'sqli'} <= self.state[entry.ip]:
             del self.state[entry.ip]
