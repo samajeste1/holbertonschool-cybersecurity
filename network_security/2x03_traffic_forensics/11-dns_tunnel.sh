@@ -1,2 +1,2 @@
 #!/bin/bash
-tshark -r "$1" -Y "dns.flags.response == 0 && len(dns.qry.name) > 50" -T fields -e dns.qry.name 2>/dev/null | awk '!seen[$0]++'
+tshark -r "$1" -Y "dns.flags.response==0" -T fields -e dns.qry.name | awk 'length($0) > 50 && !seen[$0]++'

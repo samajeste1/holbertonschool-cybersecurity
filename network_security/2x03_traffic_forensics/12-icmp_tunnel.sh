@@ -1,2 +1,2 @@
 #!/bin/bash
-tshark -r "$1" -Y "icmp && frame.len > 100" -T fields -e ip.src 2>/dev/null | sort -u
+tshark -r "$1" -Y "icmp && frame.len > 100" -T fields -e ip.src | sort -u

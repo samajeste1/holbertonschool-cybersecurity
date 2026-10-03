@@ -1,2 +1,2 @@
 #!/bin/bash
-tshark -r "$1" -Y "http.request.uri matches \"(?i)(union|select)\"" -T fields -e http.request.uri 2>/dev/null
+tshark -r "$1" -Y 'http.request.uri matches "(?i)(union|select)"' -T fields -e http.request.uri
