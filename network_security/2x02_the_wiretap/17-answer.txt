@@ -1,1 +1,1 @@
-ftpuser:ftp_s3cr3t
+admin:N3xus2024!

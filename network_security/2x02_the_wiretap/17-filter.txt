@@ -1,2 +1,1 @@
-ftp.request.command == "USER"
-ftp.request.command == "PASS"
+ftp.request.command == "USER" || ftp.request.command == "PASS"
