@@ -36,8 +36,7 @@ COPY --from=builder /usr/local/bin/ /usr/local/bin/
 WORKDIR /app
 
 # Copy application files with correct ownership
-# No secrets hardcoded — provide at runtime:
-#   docker run -e DB_HOST=host -e DB_USER=user -e DB_PASSWORD=pass
+# No secrets in this image — inject via runtime environment variables
 COPY --chown=devuser:devuser . /app
 
 # Switch to non-root user
