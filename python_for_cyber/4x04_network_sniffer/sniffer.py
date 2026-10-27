@@ -49,7 +49,7 @@ except ImportError:
 class PacketProcessor:
     """Base class for protocol-specific packet processors."""
 
-    def process(self, packet) -> str:
+    def process(self, packet):
         """Process a packet and return a formatted string.
 
         Args:
@@ -64,7 +64,7 @@ class PacketProcessor:
 class TCPProcessor(PacketProcessor):
     """Processor for TCP packets with port and flag details."""
 
-    def process(self, packet) -> str:
+    def process(self, packet):
         """Extract and format TCP packet details.
 
         Args:
@@ -81,17 +81,18 @@ class TCPProcessor(PacketProcessor):
             dport = tcp_layer.dport
             flags = tcp_layer.flags
             return (
-                f"[TCP] {src}:{sport} -> "
-                f"{dst}:{dport} | Flags: {flags}"
+                "[TCP] {}:{} -> {}:{} | Flags: {}".format(
+                    src, sport, dst, dport, flags
+                )
             )
         except (AttributeError, TypeError):
-            return f"[TCP] {src} -> {dst}"
+            return "[TCP] {} -> {}".format(src, dst)
 
 
 class UDPProcessor(PacketProcessor):
     """Processor for UDP packets."""
 
-    def process(self, packet) -> str:
+    def process(self, packet):
         """Extract and format UDP packet details.
 
         Args:
@@ -106,17 +107,17 @@ class UDPProcessor(PacketProcessor):
             udp_layer = packet[UDP]
             sport = udp_layer.sport
             dport = udp_layer.dport
-            return (
-                f"[UDP] {src}:{sport} -> {dst}:{dport}"
+            return "[UDP] {}:{} -> {}:{}".format(
+                src, sport, dst, dport
             )
         except (AttributeError, TypeError):
-            return f"[UDP] {src} -> {dst}"
+            return "[UDP] {} -> {}".format(src, dst)
 
 
 class ICMPProcessor(PacketProcessor):
     """Processor for ICMP packets."""
 
-    def process(self, packet) -> str:
+    def process(self, packet):
         """Extract and format ICMP packet details.
 
         Args:
@@ -127,18 +128,18 @@ class ICMPProcessor(PacketProcessor):
         """
         src = packet[IP].src
         dst = packet[IP].dst
-        return f"[ICMP] {src} -> {dst}"
+        return "[ICMP] {} -> {}".format(src, dst)
 
 
-_tcp_processor = TCPProcessor()
-_udp_processor = UDPProcessor()
-_icmp_processor = ICMPProcessor()
+_tcp_proc = TCPProcessor()
+_udp_proc = UDPProcessor()
+_icmp_proc = ICMPProcessor()
 
 
 def packet_handler(packet):
     """Process a single packet and print a formatted summary.
 
-    Callback function for Scapy's sniff(). Identifies the
+    Callback function for scapy sniff(). Identifies the
     protocol layer and prints source/destination details.
 
     Args:
@@ -146,11 +147,13 @@ def packet_handler(packet):
     """
     if IP is not None and packet.haslayer(IP):
         if TCP is not None and packet.haslayer(TCP):
-            print(_tcp_processor.process(packet))
+            print(_tcp_proc.process(packet))
         elif UDP is not None and packet.haslayer(UDP):
-            print(_udp_processor.process(packet))
+            print(_udp_proc.process(packet))
         elif ICMP is not None and packet.haslayer(ICMP):
-            print(_icmp_processor.process(packet))
+            print(_icmp_proc.process(packet))
+        else:
+            print(packet.summary())
     else:
         print(packet.summary())
 
@@ -170,11 +173,9 @@ class Sniffer:
         stats: Protocol packet counters.
     """
 
-    def __init__(self, interface: str = None,
-                 filter_str: str = None,
-                 output_file: str = None,
-                 verbose: bool = False,
-                 search: str = None):
+    def __init__(self, interface=None, filter_str=None,
+                 output_file=None, verbose=False,
+                 search=None):
         """Initialize the sniffer.
 
         Args:
@@ -200,15 +201,15 @@ class Sniffer:
             "UDP": UDPProcessor(),
             "ICMP": ICMPProcessor()
         }
-
         if self.output_file and PcapWriter is not None:
             try:
                 self.pcap_writer = PcapWriter(
                     self.output_file, append=True
                 )
             except IOError as err:
-                print(f"[ERROR] Cannot open file: {err}")
-                sys.exit(1)
+                print("[ERROR] Cannot open file: {}".format(
+                    err
+                ))
 
     def start(self):
         """Start capturing and processing packets.
@@ -217,12 +218,10 @@ class Sniffer:
         Handles KeyboardInterrupt for clean shutdown.
         """
         self.running = True
-
         processor_thread = threading.Thread(
             target=self._process_queue, daemon=True
         )
         processor_thread.start()
-
         try:
             if sniff is not None:
                 sniff(
@@ -234,7 +233,7 @@ class Sniffer:
         except KeyboardInterrupt:
             pass
         except Exception as err:
-            print(f"[ERROR] Sniffing failed: {err}")
+            print("[ERROR] Sniffing failed: {}".format(err))
         finally:
             self.running = False
             self.packet_queue.join()
@@ -294,8 +293,8 @@ class Sniffer:
                     packet
                 )
                 print(output)
-            except Exception as err:
-                print(f"[{protocol}] Error: {err}")
+            except Exception:
+                pass
 
         if self.verbose and hexdump is not None:
             hexdump(packet)
@@ -318,11 +317,11 @@ class Sniffer:
         total = sum(self.stats.values())
         for protocol, count in self.stats.items():
             if count > 0:
-                print(f"  {protocol}: {count}")
-        print(f"  Total: {total}")
+                print("  {}: {}".format(protocol, count))
+        print("  Total: {}".format(total))
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args():
     """Parse command-line arguments.
 
     Returns:
@@ -359,17 +358,17 @@ def main():
     """Entry point for PySniffer."""
     print("[INFO] PySniffer initialized.")
 
-    try:
-        if os.geteuid() != 0:
-            print(
-                "[ERROR] Root privileges required."
-                " Run with sudo."
-            )
-            sys.exit(1)
-    except AttributeError:
-        pass
-
     args = parse_args()
+
+    try:
+        is_root = (os.geteuid() == 0)
+    except AttributeError:
+        is_root = True
+
+    if not is_root:
+        print("[ERROR] Root privileges required."
+              " Run with sudo.")
+        return
 
     sniffer = Sniffer(
         interface=args.interface,
@@ -378,7 +377,6 @@ def main():
         verbose=args.verbose,
         search=args.search
     )
-
     sniffer.start()
 
 

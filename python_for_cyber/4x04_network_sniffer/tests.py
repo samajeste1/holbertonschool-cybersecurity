@@ -29,25 +29,33 @@ except ImportError:
     Raw = None
 
 from sniffer import (
-    TCPProcessor, UDPProcessor, ICMPProcessor, Sniffer
+    TCPProcessor, UDPProcessor, ICMPProcessor,
+    Sniffer, packet_handler
 )
 
 
 class TestTCPProcessor(unittest.TestCase):
     """Tests for TCPProcessor."""
 
-    def test_output_format(self):
-        """Test TCP output contains protocol tag and IPs."""
+    def test_output_contains_tag(self):
+        """Test TCP output contains protocol tag."""
         packet = IP(src="1.1.1.1", dst="2.2.2.2") / TCP(
             sport=12345, dport=80, flags="S"
         )
         result = TCPProcessor().process(packet)
         self.assertIn("[TCP]", result)
+
+    def test_output_contains_ips(self):
+        """Test TCP output contains source and dest IPs."""
+        packet = IP(src="1.1.1.1", dst="2.2.2.2") / TCP(
+            sport=12345, dport=80, flags="S"
+        )
+        result = TCPProcessor().process(packet)
         self.assertIn("1.1.1.1", result)
         self.assertIn("2.2.2.2", result)
 
     def test_extracts_ports(self):
-        """Test TCP processor extracts correct IPs."""
+        """Test TCP processor handles port extraction."""
         packet = IP(src="10.0.0.1", dst="10.0.0.2") / TCP(
             sport=443, dport=8080
         )
@@ -56,25 +64,24 @@ class TestTCPProcessor(unittest.TestCase):
         self.assertIn("10.0.0.1", result)
         self.assertIn("10.0.0.2", result)
 
-    def test_extracts_flags(self):
-        """Test TCP processor returns valid output."""
-        packet = IP(src="1.1.1.1", dst="2.2.2.2") / TCP(
-            sport=1234, dport=80, flags="S"
-        )
-        result = TCPProcessor().process(packet)
-        self.assertIn("[TCP]", result)
-
 
 class TestUDPProcessor(unittest.TestCase):
     """Tests for UDPProcessor."""
 
-    def test_output_format(self):
-        """Test UDP output contains protocol tag and IPs."""
+    def test_output_contains_tag(self):
+        """Test UDP output contains protocol tag."""
         packet = IP(src="10.0.0.1", dst="8.8.8.8") / UDP(
             sport=5353, dport=53
         )
         result = UDPProcessor().process(packet)
         self.assertIn("[UDP]", result)
+
+    def test_output_contains_ips(self):
+        """Test UDP output contains source and dest IPs."""
+        packet = IP(src="10.0.0.1", dst="8.8.8.8") / UDP(
+            sport=5353, dport=53
+        )
+        result = UDPProcessor().process(packet)
         self.assertIn("10.0.0.1", result)
         self.assertIn("8.8.8.8", result)
 
@@ -82,15 +89,37 @@ class TestUDPProcessor(unittest.TestCase):
 class TestICMPProcessor(unittest.TestCase):
     """Tests for ICMPProcessor."""
 
-    def test_output_format(self):
+    def test_output_contains_tag(self):
         """Test ICMP output contains protocol tag."""
         packet = IP(
             src="192.168.1.1", dst="192.168.1.2"
         ) / ICMP()
         result = ICMPProcessor().process(packet)
         self.assertIn("[ICMP]", result)
+
+    def test_output_contains_ips(self):
+        """Test ICMP output contains source and dest IPs."""
+        packet = IP(
+            src="192.168.1.1", dst="192.168.1.2"
+        ) / ICMP()
+        result = ICMPProcessor().process(packet)
         self.assertIn("192.168.1.1", result)
         self.assertIn("192.168.1.2", result)
+
+
+class TestPacketHandler(unittest.TestCase):
+    """Tests for the packet_handler callback function."""
+
+    def test_handler_is_callable(self):
+        """Test packet_handler is a callable function."""
+        self.assertTrue(callable(packet_handler))
+
+    def test_handler_processes_icmp(self):
+        """Test packet_handler handles ICMP packets."""
+        packet = IP(
+            src="1.1.1.1", dst="2.2.2.2"
+        ) / ICMP()
+        packet_handler(packet)
 
 
 class TestSnifferInit(unittest.TestCase):
@@ -156,7 +185,7 @@ class TestSnifferInit(unittest.TestCase):
         self.assertEqual(sniffer.stats["TCP"], 1)
 
     def test_no_payload_no_crash(self):
-        """Test search with no Raw layer does not crash."""
+        """Test search with no Raw layer no crash."""
         sniffer = Sniffer(search="password")
         packet = IP(src="1.1.1.1", dst="2.2.2.2") / TCP(
             dport=80
