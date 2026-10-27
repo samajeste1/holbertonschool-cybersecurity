@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: secure-python-dev:v1
+    user: "appuser"
+    working_dir: /app/workspace
+    volumes:
+      - ./workspace:/app/workspace
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/logs
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 50
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.5"
+    environment:
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "5000:5000"
