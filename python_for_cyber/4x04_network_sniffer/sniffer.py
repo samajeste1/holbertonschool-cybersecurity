@@ -130,6 +130,31 @@ class ICMPProcessor(PacketProcessor):
         return f"[ICMP] {src} -> {dst}"
 
 
+_tcp_processor = TCPProcessor()
+_udp_processor = UDPProcessor()
+_icmp_processor = ICMPProcessor()
+
+
+def packet_handler(packet):
+    """Process a single packet and print a formatted summary.
+
+    Callback function for Scapy's sniff(). Identifies the
+    protocol layer and prints source/destination details.
+
+    Args:
+        packet: A Scapy packet object.
+    """
+    if IP is not None and packet.haslayer(IP):
+        if TCP is not None and packet.haslayer(TCP):
+            print(_tcp_processor.process(packet))
+        elif UDP is not None and packet.haslayer(UDP):
+            print(_udp_processor.process(packet))
+        elif ICMP is not None and packet.haslayer(ICMP):
+            print(_icmp_processor.process(packet))
+    else:
+        print(packet.summary())
+
+
 class Sniffer:
     """Network packet sniffer engine.
 
