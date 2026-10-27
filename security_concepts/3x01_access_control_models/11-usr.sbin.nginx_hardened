@@ -1,0 +1,47 @@
+/usr/sbin/nginx {
+  # Binary itself
+  /usr/sbin/nginx r,
+
+  # Configuration files
+  /etc/nginx/ r,
+  /etc/nginx/** r,
+
+  # Static web content
+  /usr/share/nginx/html/ r,
+  /usr/share/nginx/html/** r,
+
+  # Log files
+  /var/log/nginx/ rw,
+  /var/log/nginx/** rw,
+
+  # SecureHealth plugin configuration
+  /opt/securehealth/plugin.conf r,
+
+  # SecureHealth plugin data
+  /opt/securehealth/data/ r,
+  /opt/securehealth/data/** r,
+
+  # Network access for TCP and UDP
+  network inet stream,
+  network inet dgram,
+
+  # PID file - required for nginx master process management
+  /run/nginx.pid rw,
+
+  # SSL/TLS certificates - required for HTTPS connections
+  /etc/ssl/ r,
+  /etc/ssl/** r,
+
+  # Shared libraries - required for nginx to load and start
+  /lib/ r,
+  /lib/** r,
+  /usr/lib/ r,
+  /usr/lib/** r,
+
+  # Temporary and cache files - required for nginx proxy/upload buffering
+  /var/lib/nginx/ rw,
+  /var/lib/nginx/** rw,
+
+  # Proc filesystem - nginx reads worker process status
+  /proc/*/status r,
+}
