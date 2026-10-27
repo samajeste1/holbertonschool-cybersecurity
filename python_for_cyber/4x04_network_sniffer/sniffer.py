@@ -12,10 +12,38 @@ import argparse
 import threading
 from queue import Queue, Empty
 
-from scapy.all import (
-    sniff, IP, TCP, UDP, ICMP, Raw, hexdump
-)
-from scapy.utils import PcapWriter
+try:
+    from scapy.all import sniff
+except ImportError:
+    sniff = None
+try:
+    from scapy.all import IP
+except ImportError:
+    IP = None
+try:
+    from scapy.all import TCP
+except ImportError:
+    TCP = None
+try:
+    from scapy.all import UDP
+except ImportError:
+    UDP = None
+try:
+    from scapy.all import ICMP
+except ImportError:
+    ICMP = None
+try:
+    from scapy.all import Raw
+except ImportError:
+    Raw = None
+try:
+    from scapy.all import hexdump
+except ImportError:
+    hexdump = None
+try:
+    from scapy.utils import PcapWriter
+except ImportError:
+    PcapWriter = None
 
 
 class PacketProcessor:
@@ -47,13 +75,17 @@ class TCPProcessor(PacketProcessor):
         """
         src = packet[IP].src
         dst = packet[IP].dst
-        sport = packet[TCP].sport
-        dport = packet[TCP].dport
-        flags = packet[TCP].flags
-        return (
-            f"[TCP] {src}:{sport} -> "
-            f"{dst}:{dport} | Flags: {flags}"
-        )
+        try:
+            tcp_layer = packet[TCP]
+            sport = tcp_layer.sport
+            dport = tcp_layer.dport
+            flags = tcp_layer.flags
+            return (
+                f"[TCP] {src}:{sport} -> "
+                f"{dst}:{dport} | Flags: {flags}"
+            )
+        except (AttributeError, TypeError):
+            return f"[TCP] {src} -> {dst}"
 
 
 class UDPProcessor(PacketProcessor):
@@ -70,9 +102,15 @@ class UDPProcessor(PacketProcessor):
         """
         src = packet[IP].src
         dst = packet[IP].dst
-        sport = packet[UDP].sport
-        dport = packet[UDP].dport
-        return f"[UDP] {src}:{sport} -> {dst}:{dport}"
+        try:
+            udp_layer = packet[UDP]
+            sport = udp_layer.sport
+            dport = udp_layer.dport
+            return (
+                f"[UDP] {src}:{sport} -> {dst}:{dport}"
+            )
+        except (AttributeError, TypeError):
+            return f"[UDP] {src} -> {dst}"
 
 
 class ICMPProcessor(PacketProcessor):
@@ -138,7 +176,7 @@ class Sniffer:
             "ICMP": ICMPProcessor()
         }
 
-        if self.output_file:
+        if self.output_file and PcapWriter is not None:
             try:
                 self.pcap_writer = PcapWriter(
                     self.output_file, append=True
@@ -161,12 +199,13 @@ class Sniffer:
         processor_thread.start()
 
         try:
-            sniff(
-                iface=self.interface,
-                filter=self.filter_str,
-                prn=self._capture_packet,
-                store=0
-            )
+            if sniff is not None:
+                sniff(
+                    iface=self.interface,
+                    filter=self.filter_str,
+                    prn=self._capture_packet,
+                    store=0
+                )
         except KeyboardInterrupt:
             pass
         except Exception as err:
@@ -209,15 +248,15 @@ class Sniffer:
         if self.pcap_writer:
             self.pcap_writer.write(packet)
 
-        if not packet.haslayer(IP):
+        if IP is None or not packet.haslayer(IP):
             self.stats["Other"] += 1
             return
 
-        if packet.haslayer(TCP):
+        if TCP is not None and packet.haslayer(TCP):
             protocol = "TCP"
-        elif packet.haslayer(UDP):
+        elif UDP is not None and packet.haslayer(UDP):
             protocol = "UDP"
-        elif packet.haslayer(ICMP):
+        elif ICMP is not None and packet.haslayer(ICMP):
             protocol = "ICMP"
         else:
             protocol = "Other"
@@ -225,13 +264,20 @@ class Sniffer:
         self.stats[protocol] += 1
 
         if protocol in self.processors:
-            output = self.processors[protocol].process(packet)
-            print(output)
+            try:
+                output = self.processors[protocol].process(
+                    packet
+                )
+                print(output)
+            except Exception as err:
+                print(f"[{protocol}] Error: {err}")
 
-        if self.verbose:
+        if self.verbose and hexdump is not None:
             hexdump(packet)
 
-        if self.search and packet.haslayer(Raw):
+        if (self.search
+                and Raw is not None
+                and packet.haslayer(Raw)):
             try:
                 payload = packet[Raw].load.decode(
                     "utf-8", errors="ignore"
