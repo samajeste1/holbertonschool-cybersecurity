@@ -26,8 +26,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN groupadd -g 1000 appuser && \
-    useradd -m -u 1000 -g appuser -s /bin/bash appuser
+RUN groupadd -g 1000 devuser && \
+    useradd -m -u 1000 -g devuser -s /bin/bash devuser
 
 # Copy Python packages from builder stage (no build tools in final image)
 COPY --from=builder /usr/local/lib/python3.11/site-packages/ /usr/local/lib/python3.11/site-packages/
@@ -38,10 +38,10 @@ WORKDIR /app
 # Copy application files with correct ownership
 # No secrets hardcoded — provide at runtime:
 #   docker run -e DB_HOST=host -e DB_USER=user -e DB_PASSWORD=pass
-COPY --chown=appuser:appuser . /app
+COPY --chown=devuser:devuser . /app
 
 # Switch to non-root user
-USER appuser
+USER devuser
 
 EXPOSE 5000
 

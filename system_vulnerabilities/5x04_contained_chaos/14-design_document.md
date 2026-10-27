@@ -33,12 +33,12 @@ All development tools are installed in the builder stage and only the compiled a
 
 ## 3. User Configuration
 
-- **Username:** `appuser`
+- **Username:** `devuser`
 - **UID/GID:** 1000/1000
 - **Shell:** `/bin/bash`
-- **Home:** `/home/appuser`
+- **Home:** `/home/devuser`
 
-The user is created with `groupadd` and `useradd` to ensure deterministic UID/GID assignment. The `USER appuser` directive ensures all subsequent commands (including CMD) run as this unprivileged user. The UID 1000 is chosen to match the default first user on most Linux distributions, which simplifies volume permission handling during development.
+The user is created with `groupadd` and `useradd` to ensure deterministic UID/GID assignment. The `USER devuser` directive ensures all subsequent commands (including CMD) run as this unprivileged user. The UID 1000 is chosen to match the default first user on most Linux distributions, which simplifies volume permission handling during development.
 
 ## 4. Volume Strategy
 
@@ -50,7 +50,7 @@ The user is created with `groupadd` and `useradd` to ensure deterministic UID/GI
 
 | Measure | Implementation | Purpose |
 |---------|---------------|---------|
-| Non-root user | `USER appuser` | Prevent privilege abuse |
+| Non-root user | `USER devuser` | Prevent privilege abuse |
 | Multi-stage build | `FROM ... AS builder` | Exclude build tools from runtime |
 | No hardcoded secrets | ENV removed | Secrets provided at runtime only |
 | Read-only filesystem | `--read-only` | Prevent attacker file modification |

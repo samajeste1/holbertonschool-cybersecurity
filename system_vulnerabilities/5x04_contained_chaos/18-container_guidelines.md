@@ -30,8 +30,8 @@
 
 - **Create and use a non-root user.** Every Dockerfile must include a `USER` directive that switches to an unprivileged user before `CMD` or `ENTRYPOINT`.
   ```dockerfile
-  RUN groupadd -g 1000 appuser && useradd -m -u 1000 -g appuser appuser
-  USER appuser
+  RUN groupadd -g 1000 devuser && useradd -m -u 1000 -g devuser devuser
+  USER devuser
   ```
 
 - **Add a HEALTHCHECK.** Every production image must define a health check.
@@ -136,7 +136,7 @@ trivy image --severity CRITICAL,HIGH <image_name>
 | `--memory-swap` | same as `--memory` | Disable swap |
 | `--cpus` | `0.5` (adjust per service) | Prevent CPU monopolization |
 | `--pids-limit` | `50` (adjust per service) | Prevent fork bombs |
-| `--user` | `appuser` or non-root UID | Never run as root |
+| `--user` | `devuser` or non-root UID | Never run as root |
 
 ### Prohibited Runtime Configurations
 
@@ -159,7 +159,7 @@ docker run -d \
     --memory-swap=256m \
     --cpus=0.5 \
     --pids-limit=50 \
-    --user=appuser \
+    --user=devuser \
     -p 5000:5000 \
     myapp:v1
 ```

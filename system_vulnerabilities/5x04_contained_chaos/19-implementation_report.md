@@ -87,7 +87,7 @@ This ensures that pip, gcc, make, and all build artifacts are excluded from the 
 
 ### 3.3 Non-Root User Creation
 
-Added a dedicated `appuser` account (UID 1000, GID 1000) and set `USER appuser` before the `CMD` instruction. All application files are owned by this user via `COPY --chown=appuser:appuser`.
+Added a dedicated `devuser` account (UID 1000, GID 1000) and set `USER devuser` before the `CMD` instruction. All application files are owned by this user via `COPY --chown=devuser:devuser`.
 
 ### 3.4 Secret Removal
 
@@ -135,7 +135,7 @@ docker-compose run --rm dev pytest tests/
 |---------|--------|
 | Pinned base image (`python:3.11-slim`) | Implemented |
 | Multi-stage build | Implemented |
-| Non-root user (`appuser`, UID 1000) | Implemented |
+| Non-root user (`devuser`, UID 1000) | Implemented |
 | No hardcoded secrets | Implemented |
 | HEALTHCHECK configured | Implemented |
 | LABEL metadata | Implemented |
@@ -260,7 +260,7 @@ Remaining items:
 | `13-run_secure.sh` | Run with all security hardening combined |
 | `14-design_document.md` | Secure dev environment design |
 | `17-final_audit.sh` | Before/after security audit comparison |
-| `18-security_guidelines.md` | Container security guidelines for DevStream |
+| `18-container_guidelines.md` | Container security guidelines for DevStream |
 | `19-implementation_report.md` | This report |
 
 ### B. Secure Dockerfile
@@ -278,14 +278,14 @@ LABEL maintainer="CyberShield Consulting" \
       version="1.0"
 RUN apt-get update && apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
-RUN groupadd -g 1000 appuser && \
-    useradd -m -u 1000 -g appuser -s /bin/bash appuser
+RUN groupadd -g 1000 devuser && \
+    useradd -m -u 1000 -g devuser -s /bin/bash devuser
 COPY --from=builder /usr/local/lib/python3.11/site-packages/ \
      /usr/local/lib/python3.11/site-packages/
 COPY --from=builder /usr/local/bin/ /usr/local/bin/
 WORKDIR /app
-COPY --chown=appuser:appuser . /app
-USER appuser
+COPY --chown=devuser:devuser . /app
+USER devuser
 EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
     CMD curl -f http://localhost:5000/health || exit 1
@@ -307,7 +307,7 @@ docker run -d \
     --cpus=0.5 \
     --pids-limit=50 \
     -e DB_HOST=prod-db.internal \
-    -e DB_USER=appuser \
+    -e DB_USER=devuser \
     -e DB_PASSWORD=<from-vault> \
     -p 5000:5000 \
     secure-python-dev:v1

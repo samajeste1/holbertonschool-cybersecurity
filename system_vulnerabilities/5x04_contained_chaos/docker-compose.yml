@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: secure-python-dev:v1
-    user: "appuser"
+    user: "devuser"
     working_dir: /app/workspace
     volumes:
       - ./workspace:/app/workspace

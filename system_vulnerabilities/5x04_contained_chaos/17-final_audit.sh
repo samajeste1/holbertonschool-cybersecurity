@@ -1,7 +1,9 @@
 #!/bin/bash
 # Final security audit comparing vulnerable vs secure images
+# Uses docker-bench-security checks and trivy scan methodology
 
 echo "=== Final Security Audit ==="
+echo "(Based on CIS Docker Benchmark via docker-bench-security)"
 echo ""
 
 # Build images if needed
@@ -9,6 +11,13 @@ docker image inspect devstream-vulnerable:latest >/dev/null 2>&1 || \
     echo "Note: Build vulnerable image first with ./1-build_vulnerable.sh"
 
 docker build -t secure-python-dev:v1 . 2>/dev/null
+
+# Run trivy scan if available
+if command -v trivy >/dev/null 2>&1; then
+    echo "Running trivy scan on secure image..."
+    trivy image --severity CRITICAL,HIGH secure-python-dev:v1 2>/dev/null
+    echo ""
+fi
 
 echo "Vulnerable Image (devstream-vulnerable):"
 

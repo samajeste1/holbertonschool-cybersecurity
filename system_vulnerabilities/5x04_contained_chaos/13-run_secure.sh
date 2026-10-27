@@ -18,7 +18,7 @@ echo ""
 echo "Additional hardening:"
 echo "  --cap-drop=ALL"
 echo "  --read-only"
-echo "  --user=appuser"
+echo "  --user=devuser"
 echo "  --memory=256m"
 echo "  --pids-limit=50"
 echo ""
@@ -57,8 +57,8 @@ echo "  Seccomp: ENABLED (default profile)"
 
 # Check user
 USER_INFO=$(docker exec devstream-hardened id 2>/dev/null)
-if echo "$USER_INFO" | grep -q 'appuser'; then
-    echo "  Root access: NONE (running as appuser)"
+if echo "$USER_INFO" | grep -q 'devuser'; then
+    echo "  Root access: NONE (running as devuser)"
 else
     echo "  User: $USER_INFO"
 fi
