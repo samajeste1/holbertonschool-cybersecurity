@@ -5,13 +5,16 @@ ACTION="${1:-status}"
 USER="$2"
 
 # Parse command using conditional logic
-if [[ $1 == "status" ]] || [[ -z $1 ]]; then
-    ACTION="status"
-elif [[ $1 == "show" ]]; then
-    ACTION="show"
-elif [[ $1 == "reset" ]]; then
-    ACTION="reset"
-fi
+parse_command() {
+    if [ "$1" == "status" ] || [ -z "$1" ]; then
+        ACTION="status"
+    elif [ "$1" == "show" ]; then
+        ACTION="show"
+    elif [ "$1" == "reset" ]; then
+        ACTION="reset"
+    fi
+}
+parse_command "$1"
 
 case "$ACTION" in
     status)

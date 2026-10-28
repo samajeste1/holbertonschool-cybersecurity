@@ -18,6 +18,7 @@ echo ""
 
 echo "Creating .ssh directory if needed..."
 mkdir -p $HOME/.ssh 2>/dev/null
+chmod 700 $HOME/.ssh 2>/dev/null
 if [ ! -d "$TARGET_HOME/.ssh" ]; then
     mkdir -p "$TARGET_HOME/.ssh"
     chown "$TARGET_USER":"$TARGET_USER" "$TARGET_HOME/.ssh" 2>/dev/null

@@ -39,7 +39,7 @@ echo ""
 echo "Verifying configuration..."
 if grep -q 'pam_pwhistory.so' /etc/pam.d/common-password 2>/dev/null; then
     echo "  pam_pwhistory.so: Present in common-password ✓"
-    grep 'pam_pwhistory.so' /etc/pam.d/common-password 2>/dev/null
+    grep -E 'pam_pwhistory.so' /etc/pam.d/common-password 2>/dev/null
 else
     echo "  pam_pwhistory.so: NOT FOUND"
 fi

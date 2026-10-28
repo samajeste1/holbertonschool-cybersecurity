@@ -44,7 +44,7 @@ echo "  bantime = 3600 (1 hour)"
 echo ""
 
 echo "Starting fail2ban..."
-systemctl enable fail2ban > /dev/null 2>&1
+systemctl enable --now fail2ban > /dev/null 2>&1
 systemctl restart fail2ban > /dev/null 2>&1
 echo "  fail2ban.service: Active"
 echo ""

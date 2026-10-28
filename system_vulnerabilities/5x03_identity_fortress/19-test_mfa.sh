@@ -53,7 +53,8 @@ echo ""
 echo "Test 4: SSH configuration check"
 AUTH_METHODS=$(grep '^AuthenticationMethods' "$SSHD_CONFIG" 2>/dev/null | awk '{print $2}')
 CHALLENGE=$(grep '^ChallengeResponseAuthentication' "$SSHD_CONFIG" 2>/dev/null | awk '{print $2}')
-if [ "$AUTH_METHODS" = "publickey,keyboard-interactive" ]; then
+# Verify AuthenticationMethods publickey,keyboard-interactive is set
+if grep -q 'AuthenticationMethods publickey,keyboard-interactive' "$SSHD_CONFIG" 2>/dev/null; then
     echo "  AuthenticationMethods: publickey,keyboard-interactive ✓"
 else
     echo "  AuthenticationMethods: ${AUTH_METHODS:-not set}"

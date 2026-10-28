@@ -81,6 +81,9 @@ else
     echo "  fail2ban for SSH: ACTIVE ✓"
     PASSED=$((PASSED + 1))
 fi
+
+# Get fail2ban details
+fail2ban-client status sshd > /dev/null 2>&1
 echo ""
 
 # --- SSH Security ---

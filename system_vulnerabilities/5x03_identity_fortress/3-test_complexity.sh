@@ -1,7 +1,7 @@
 #!/bin/bash
 # Test password complexity enforcement
 
-echo "=== Password Complexity Testing ==="
+echo '=== Password Complexity Testing ==='
 echo ""
 
 echo "Testing password policy enforcement..."

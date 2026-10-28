@@ -55,12 +55,12 @@ case "$ACTION" in
         ;;
 
     unban)
-        if [ -z "$PARAM" ]; then
+        if [ -z "$2" ]; then
             echo "Usage: $0 unban <IP_ADDRESS>"
             exit 1
         fi
-        fail2ban-client set sshd unbanip "$PARAM" 2>/dev/null
-        echo "IP $PARAM unbanned from jail sshd"
+        fail2ban-client set sshd unbanip $2 2>/dev/null
+        echo "IP $2 unbanned from jail sshd"
         ;;
 
     *)
