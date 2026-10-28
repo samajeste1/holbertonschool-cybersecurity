@@ -38,7 +38,7 @@ AUTH_KEYS="$TARGET_HOME/.ssh/authorized_keys"
 if grep -qF "$PUBLIC_KEY" "$AUTH_KEYS" 2>/dev/null; then
     echo "  Key already present in authorized_keys"
 else
-    echo "$PUBLIC_KEY" >> "$AUTH_KEYS"
+    echo "$PUBLIC_KEY" >> $HOME/.ssh/authorized_keys
     echo "  Key fingerprint: $(echo "$PUBLIC_KEY" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}')"
     echo "  Key added successfully"
 fi

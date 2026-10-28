@@ -7,39 +7,23 @@ echo ""
 echo "Testing password policy enforcement..."
 echo ""
 
-# Define test passwords: "password:description:should_fail"
-TEST_PASSWORDS=(
-    "password:common word:yes"
-    "Password123:no special char:yes"
-    "Ab1!:too short:yes"
-    "auditor2024:contains username:yes"
-    "Str0ng!P@ssw0rd#2024:valid complex password:no"
-)
-
 TEST_NUM=0
 PASSED=0
 FAILED=0
-TOTAL=${#TEST_PASSWORDS[@]}
-
-# Create a test user for password testing if needed
-TEST_USER="testcomplexity$$"
+TOTAL=5
 
 # Iterate over defined test passwords using for loop
-for entry in "${TEST_PASSWORDS[@]}"; do
+for test_pass in 'password' 'Password123' 'Ab1!' 'auditor2024' 'Str0ng!P@ssw0rd#2024'; do
     TEST_NUM=$((TEST_NUM + 1))
-    # Parse the entry
-    pw=$(echo "$entry" | cut -d: -f1)
-    desc=$(echo "$entry" | cut -d: -f2)
-    should_fail=$(echo "$entry" | cut -d: -f3)
 
-    echo "Test $TEST_NUM: \"$pw\" ($desc)"
+    echo "Test $TEST_NUM: \"$test_pass\""
 
     # Attempt password change using passwd command and capture output with stderr redirection
-    OUTPUT=$(echo -e "$pw\n$pw" | passwd --stdin "$USER" 2>&1 || echo -e "$pw\n$pw" | chpasswd 2>&1)
+    OUTPUT=$(echo -e "$test_pass\n$test_pass" | passwd --stdin "$USER" 2>&1 || echo -e "$test_pass\n$test_pass" | chpasswd 2>&1)
     EXIT_CODE=$?
 
     # Also test with pwscore as fallback
-    PWSCORE_OUTPUT=$(echo "$pw" | pwscore 2>&1)
+    PWSCORE_OUTPUT=$(echo "$test_pass" | pwscore 2>&1)
     PWSCORE_EXIT=$?
 
     # Validate rejection reasons using grep for BAD PASSWORD patterns
@@ -47,7 +31,7 @@ for entry in "${TEST_PASSWORDS[@]}"; do
         REASON=$(echo "$OUTPUT" | grep -i "BAD PASSWORD" 2>&1)
         echo "  Result: REJECTED"
         echo "  Reason: $REASON"
-        if [ "$should_fail" = "yes" ]; then
+        if [ "$test_pass" != "Str0ng!P@ssw0rd#2024" ]; then
             echo "  Verdict: PASS ✓"
             PASSED=$((PASSED + 1))
         else
@@ -57,7 +41,7 @@ for entry in "${TEST_PASSWORDS[@]}"; do
     elif [ "$PWSCORE_EXIT" -ne 0 ]; then
         echo "  Result: REJECTED"
         echo "  Reason: $PWSCORE_OUTPUT"
-        if [ "$should_fail" = "yes" ]; then
+        if [ "$test_pass" != "Str0ng!P@ssw0rd#2024" ]; then
             echo "  Verdict: PASS ✓"
             PASSED=$((PASSED + 1))
         else
@@ -67,7 +51,7 @@ for entry in "${TEST_PASSWORDS[@]}"; do
     else
         echo "  Result: ACCEPTED"
         echo "  Score: $PWSCORE_OUTPUT"
-        if [ "$should_fail" = "no" ]; then
+        if [ "$test_pass" = "Str0ng!P@ssw0rd#2024" ]; then
             echo "  Verdict: PASS ✓"
             PASSED=$((PASSED + 1))
         else

@@ -2,7 +2,6 @@
 # Manage faillock status: view locked accounts, show user details, reset locks
 
 ACTION="${1:-status}"
-USER="$2"
 
 # Parse command using conditional logic
 parse_command() {
@@ -43,14 +42,14 @@ case "$ACTION" in
         ;;
 
     show)
-        if [ -z "$USER" ]; then
+        if [ -z "$2" ]; then
             echo "Usage: $0 show <username>"
             exit 1
         fi
-        echo "=== Faillock Details: $USER ==="
+        echo "=== Faillock Details: $2 ==="
         echo ""
         echo "Recent failures:"
-        faillock --user "$USER" 2>/dev/null | grep -v '^$' | while read -r line; do
+        faillock --user "$2" 2>/dev/null | grep -v '^$' | while read -r line; do
             if echo "$line" | grep -q 'V\|I'; then
                 TIMESTAMP=$(echo "$line" | awk '{print $1, $2}')
                 SOURCE=$(echo "$line" | awk '{print $NF}')
@@ -59,7 +58,7 @@ case "$ACTION" in
         done
 
         # Check if locked
-        FAIL_COUNT=$(faillock --user "$USER" 2>/dev/null | grep -c 'V')
+        FAIL_COUNT=$(faillock --user "$2" 2>/dev/null | grep -c 'V')
         if [ "$FAIL_COUNT" -ge 5 ] 2>/dev/null; then
             echo ""
             echo "Status: LOCKED"
@@ -71,12 +70,12 @@ case "$ACTION" in
         ;;
 
     reset)
-        if [ -z "$USER" ]; then
+        if [ -z "$2" ]; then
             echo "Usage: $0 reset <username>"
             exit 1
         fi
-        faillock --user "$USER" --reset 2>/dev/null
-        echo "Account $USER: Lock cleared"
+        faillock --user "$2" --reset 2>/dev/null
+        echo "Account $2: Lock cleared"
         ;;
 
     *)

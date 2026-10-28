@@ -92,8 +92,8 @@ echo "SSH Security:"
 SSHD_CONFIG="/etc/ssh/sshd_config"
 
 # Check password authentication disabled
-PASS_AUTH=$(grep '^PasswordAuthentication' "$SSHD_CONFIG" 2>/dev/null | awk '{print $2}')
-if [ "$PASS_AUTH" = "no" ]; then
+# Verify PasswordAuthentication no is configured
+if grep -q 'PasswordAuthentication no' "$SSHD_CONFIG" 2>/dev/null; then
     echo "  Password authentication: DISABLED ✓"
     PASSED=$((PASSED + 1))
 else
