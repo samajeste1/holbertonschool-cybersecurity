@@ -1,0 +1,181 @@
+========================================
+EMERGENCY ACCESS PROCEDURES
+NovaTech Solutions — Identity Fortress
+========================================
+
+Document Version: 1.0
+Classification: CONFIDENTIAL
+Last Updated: 2024-01-20
+Approved By: CISO
+
+========================================
+1. LOST PHONE / LOST TOTP DEVICE
+========================================
+
+Situation: A user has lost the device containing their TOTP authenticator
+app and cannot generate verification codes.
+
+Immediate Steps:
+  1. User contacts IT Security team via phone or in-person (not email)
+  2. IT Security verifies user identity using:
+     - Employee ID badge (in-person)
+     - Manager confirmation (phone)
+     - Pre-registered security questions
+  3. IT Security uses emergency scratch codes (if available)
+  4. If scratch codes are exhausted, proceed to Temporary MFA Bypass
+
+Recovery Steps:
+  1. IT Security resets TOTP for the user:
+     $ sudo rm /home/<username>/.google_authenticator
+  2. User generates new TOTP secret:
+     $ google-authenticator -t -d -r 3 -R 30 -w 3 -f
+  3. User scans new QR code with replacement device
+  4. User saves new emergency scratch codes securely
+  5. IT Security logs the incident in the security log
+
+Prevention:
+  - Users should store emergency scratch codes in a secure location
+    (password manager, locked drawer, NOT on the same device)
+  - Users are encouraged to register TOTP on a backup device
+  - Users should report lost devices immediately
+
+========================================
+2. EMERGENCY SCRATCH CODES USAGE
+========================================
+
+Each user receives 5 emergency scratch codes during TOTP setup.
+These are one-time-use codes that replace the TOTP code.
+
+Usage:
+  1. When prompted for verification code, enter a scratch code
+  2. The scratch code is consumed and cannot be reused
+  3. Log in and immediately generate new scratch codes if running low
+
+Generating New Scratch Codes:
+  $ google-authenticator -t -d -r 3 -R 30 -w 3 -f
+  (This regenerates the secret AND new scratch codes)
+
+Important:
+  - Each code can only be used ONCE
+  - Store codes in a physically secure location
+  - Never store codes on the same device as the authenticator app
+  - Never share codes via email, chat, or other electronic means
+  - Report to IT Security if scratch codes are compromised
+
+========================================
+3. TEMPORARY MFA BYPASS FOR EMERGENCIES
+========================================
+
+In critical situations where MFA must be temporarily bypassed:
+
+Authorization Required:
+  - Written approval from CISO or IT Security Manager
+  - Documented business justification
+  - Maximum bypass duration: 4 hours
+
+Procedure:
+  1. Authorized admin edits PAM configuration:
+     $ sudo vi /etc/pam.d/sshd
+     Change: auth required pam_google_authenticator.so
+     To:     auth required pam_google_authenticator.so nullok
+
+  2. The "nullok" option allows users without TOTP configured to
+     bypass the second factor temporarily
+
+  3. User logs in with SSH key only (no TOTP required)
+
+  4. User immediately sets up new TOTP:
+     $ google-authenticator -t -d -r 3 -R 30 -w 3 -f
+
+  5. Admin reverts PAM configuration:
+     $ sudo vi /etc/pam.d/sshd
+     Change: auth required pam_google_authenticator.so nullok
+     To:     auth required pam_google_authenticator.so
+
+  6. Admin reloads SSH:
+     $ sudo systemctl reload sshd
+
+Post-Bypass Actions:
+  - Log the bypass in the security incident log
+  - Record: who authorized, who was bypassed, duration, reason
+  - Review if the bypass was necessary (lessons learned)
+
+========================================
+4. ROOT ACCESS RECOVERY PROCEDURE
+========================================
+
+Situation: All administrative SSH access is lost (keys invalid,
+MFA broken, sudo users locked out).
+
+CRITICAL: This procedure requires PHYSICAL or CONSOLE access.
+
+Recovery Steps:
+
+Option A: Single-User Mode Recovery
+  1. Access server console (physical or IPMI/iLO/iDRAC)
+  2. Reboot the server
+  3. At GRUB menu, edit boot parameters:
+     - Add "init=/bin/bash" to kernel line
+  4. Remount filesystem read-write:
+     # mount -o remount,rw /
+  5. Reset root password:
+     # passwd root
+  6. Fix PAM/SSH configuration as needed:
+     # vi /etc/pam.d/sshd
+     # vi /etc/ssh/sshd_config
+  7. Reboot normally:
+     # reboot -f
+
+Option B: Live USB Recovery
+  1. Boot from Ubuntu Live USB
+  2. Mount server filesystem:
+     # mount /dev/sda1 /mnt
+  3. Chroot into the system:
+     # chroot /mnt
+  4. Reset credentials and fix configurations
+  5. Exit chroot and reboot from disk
+
+Post-Recovery Actions:
+  1. Change root password again after normal boot
+  2. Lock root account after confirming sudo works:
+     $ sudo passwd -l root
+  3. Regenerate SSH host keys if compromised:
+     $ sudo ssh-keygen -A
+  4. Redistribute new host keys to users
+  5. Full security audit after recovery
+
+========================================
+5. AUDIT TRAIL REQUIREMENTS
+========================================
+
+ALL emergency access events must be logged:
+
+Required Information:
+  - Date and time of incident
+  - User affected
+  - Type of emergency (lost device, lockout, etc.)
+  - Who authorized the emergency procedure
+  - Who performed the recovery actions
+  - Duration of any security bypass
+  - Steps taken to restore full security
+  - Root cause analysis
+
+Logging Locations:
+  - /var/log/auth.log (automatic PAM logging)
+  - /var/log/security-incidents.log (manual incident log)
+  - IT Security ticketing system (formal incident record)
+
+Retention:
+  - Emergency access logs retained for minimum 1 year
+  - Reviewed monthly by IT Security team
+  - Included in quarterly security reports to CISO
+
+Reporting Chain:
+  1. Immediate: IT Security team lead
+  2. Within 24 hours: CISO notification
+  3. Within 1 week: Written incident report filed
+  4. Quarterly: Aggregate review in security report
+
+========================================
+END OF DOCUMENT
+========================================

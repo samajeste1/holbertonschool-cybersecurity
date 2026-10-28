@@ -1,0 +1,229 @@
+========================================
+IDENTITY SECURITY POLICY
+NovaTech Solutions
+========================================
+
+Document Version: 1.0
+Classification: INTERNAL
+Effective Date: 2024-01-20
+Review Date: 2024-07-20
+Approved By: Chief Information Security Officer
+
+========================================
+1. PASSWORD POLICY
+========================================
+
+1.1 Password Complexity Requirements
+
+All user passwords must meet the following criteria:
+  - Minimum length: 12 characters
+  - Must contain at least 1 uppercase letter (A-Z)
+  - Must contain at least 1 lowercase letter (a-z)
+  - Must contain at least 1 digit (0-9)
+  - Must contain at least 1 special character (!@#$%^&*...)
+  - Must not contain the username
+  - Must differ from previous password by at least 3 characters
+
+Enforcement: pam_pwquality module in /etc/security/pwquality.conf
+
+1.2 Password History
+
+  - System remembers last 5 passwords per user
+  - Users cannot reuse any of their last 5 passwords
+  - Password history is stored in /etc/security/opasswd (hashed)
+
+Enforcement: pam_pwhistory module with remember=5
+
+1.3 Password Aging
+
+  - Maximum password age: 90 days
+  - Minimum password age: 1 day (prevents rapid cycling)
+  - Warning before expiration: 14 days
+  - Accounts with expired passwords are prompted to change at login
+
+Enforcement: /etc/login.defs and chage per-user settings
+
+1.4 Compromised Passwords
+
+  - Users identified with weak or compromised passwords must change
+    them immediately (password expired via chage -d 0)
+  - Passwords found in known breach databases are prohibited
+  - IT Security may force password changes after security incidents
+
+========================================
+2. ACCOUNT LOCKOUT POLICY
+========================================
+
+2.1 Failed Login Lockout
+
+  - Accounts are locked after 5 failed authentication attempts
+  - Lockout duration: 15 minutes (automatic unlock)
+  - Failed attempts are counted within a 15-minute sliding window
+  - Lockout applies to all PAM-enabled services
+
+Enforcement: pam_faillock module
+  - deny = 5
+  - unlock_time = 900
+  - fail_interval = 900
+
+2.2 IP-Based Banning
+
+  - IP addresses with 5+ failed SSH logins within 10 minutes are banned
+  - Ban duration: 1 hour
+  - Bans are logged and reported
+  - Persistent offenders may be permanently blocked via firewall
+
+Enforcement: fail2ban with sshd jail
+
+2.3 Lockout Management
+
+  - IT Security can view locked accounts: faillock --user <name>
+  - IT Security can reset locks: faillock --user <name> --reset
+  - All lockout events are logged to /var/log/auth.log
+  - Repeated lockouts trigger security review
+
+========================================
+3. SSH ACCESS POLICY
+========================================
+
+3.1 Authentication Method
+
+  - Password-based SSH authentication is DISABLED
+  - Only public key authentication is permitted
+  - All SSH keys must use ED25519 algorithm (preferred) or RSA 4096-bit
+  - SSH keys must be protected with a passphrase
+
+3.2 Key Management
+
+  - Users generate their own key pairs
+  - Public keys are deployed to ~/.ssh/authorized_keys
+  - Private keys must never be shared or transmitted
+  - Key permissions: private key 600, public key 644, .ssh directory 700
+  - SSH keys are reviewed quarterly; unused keys are removed
+
+3.3 SSH Server Configuration
+
+  - PermitRootLogin: no (root cannot SSH directly)
+  - PasswordAuthentication: no
+  - PubkeyAuthentication: yes
+  - MaxAuthTries: 3
+  - LoginGraceTime: 60 seconds
+  - Legal banner displayed before authentication
+
+3.4 Session Security
+
+  - Idle sessions timeout after 15 minutes
+  - Maximum concurrent sessions limited per user
+  - All SSH sessions are logged with source IP and timestamp
+
+========================================
+4. MFA REQUIREMENTS
+========================================
+
+4.1 Multi-Factor Authentication
+
+All users accessing production systems must authenticate with
+two factors:
+  - First factor: SSH public key (something you have)
+  - Second factor: TOTP code from authenticator app (something you have)
+
+4.2 TOTP Configuration
+
+  - Algorithm: Time-based One-Time Password (TOTP)
+  - Implementation: Google Authenticator PAM module
+  - Token validity window: 3 intervals (allows minor clock skew)
+  - Rate limiting: 3 attempts per 30 seconds
+  - Token reuse: Disallowed
+
+4.3 Supported Authenticator Apps
+
+  - Google Authenticator (Android/iOS)
+  - Authy (Android/iOS/Desktop)
+  - Microsoft Authenticator
+  - Any RFC 6238 compliant TOTP application
+
+4.4 Emergency Scratch Codes
+
+  - 5 one-time emergency codes generated per user
+  - Codes must be stored securely (not on the same device)
+  - Users must notify IT Security when scratch codes are running low
+  - See Emergency Access Procedures for lost device recovery
+
+========================================
+5. ACCOUNT LIFECYCLE
+========================================
+
+5.1 Account Creation
+
+  - All accounts require manager approval and HR verification
+  - Accounts are created with: strong temporary password, 90-day aging,
+    force password change at first login
+  - User must set up TOTP within 24 hours of account creation
+  - SSH key pair generated during onboarding
+  - Minimum privilege principle: users get only necessary access
+
+5.2 Account Modification
+
+  - Role changes require manager approval
+  - Privilege escalation (adding sudo access) requires CISO approval
+  - Group membership changes are logged and reviewed
+  - All modifications tracked in change management system
+
+5.3 Account Termination
+
+  - Accounts are disabled immediately upon employee departure
+  - Procedure:
+    1. Lock password: passwd -l <username>
+    2. Expire account: chage -E 0 <username>
+    3. Remove SSH authorized_keys
+    4. Remove TOTP configuration
+    5. Remove from all groups
+    6. Archive home directory
+    7. Account deleted after 90-day retention period
+
+5.4 Periodic Reviews
+
+  - Monthly: Review accounts with no login in 60+ days
+  - Quarterly: Full access review with managers
+  - Annually: Complete identity security audit
+  - Inactive accounts (90+ days no login) are automatically disabled
+
+========================================
+6. EMERGENCY ACCESS PROCEDURES (SUMMARY)
+========================================
+
+6.1 Lost TOTP Device
+  - Contact IT Security for identity verification
+  - Use emergency scratch codes if available
+  - IT Security resets TOTP; user re-enrolls with new device
+
+6.2 Temporary MFA Bypass
+  - Requires CISO or IT Security Manager written approval
+  - Maximum duration: 4 hours
+  - PAM configured with "nullok" temporarily
+  - Full audit trail maintained
+
+6.3 Root Access Recovery
+  - Requires physical/console access to server
+  - Single-user mode or live USB recovery
+  - Full security audit after recovery
+  - Incident report required within 1 week
+
+6.4 Incident Reporting
+  - All emergency access events logged
+  - 24-hour notification to CISO
+  - Written incident report within 1 week
+  - Logs retained minimum 1 year
+
+========================================
+POLICY COMPLIANCE
+========================================
+
+  - All employees must acknowledge this policy annually
+  - Violations may result in disciplinary action
+  - Third-party contractors must comply with same requirements
+  - Policy reviewed semi-annually by IT Security team
+
+========================================
+END OF POLICY
+========================================
