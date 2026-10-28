@@ -7,6 +7,11 @@ echo ""
 echo "Configuring pam_pwhistory..."
 echo ""
 
+echo "Backing up PAM configuration..."
+cp /etc/pam.d/common-password /etc/pam.d/common-password.bak 2>/dev/null
+echo "  /etc/pam.d/common-password.bak created"
+echo ""
+
 echo "Creating password history file..."
 if [ ! -f /etc/security/opasswd ]; then
     touch /etc/security/opasswd
@@ -29,6 +34,15 @@ echo ""
 echo "Configuration:"
 echo "  Passwords remembered: 5"
 echo "  Hash algorithm: sha512"
+echo ""
+
+echo "Verifying configuration..."
+if grep -q 'pam_pwhistory.so' /etc/pam.d/common-password 2>/dev/null; then
+    echo "  pam_pwhistory.so: Present in common-password ✓"
+    grep 'pam_pwhistory.so' /etc/pam.d/common-password 2>/dev/null
+else
+    echo "  pam_pwhistory.so: NOT FOUND"
+fi
 echo ""
 
 echo "Testing..."

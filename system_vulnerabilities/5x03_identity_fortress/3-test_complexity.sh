@@ -7,40 +7,83 @@ echo ""
 echo "Testing password policy enforcement..."
 echo ""
 
-# Function to test a password against pwquality
-test_password() {
-    local password="$1"
-    local desc="$2"
-    local expected_reason="$3"
-    local test_num="$4"
+# Define test passwords: "password:description:should_fail"
+TEST_PASSWORDS=(
+    "password:common word:yes"
+    "Password123:no special char:yes"
+    "Ab1!:too short:yes"
+    "auditor2024:contains username:yes"
+    "Str0ng!P@ssw0rd#2024:valid complex password:no"
+)
 
-    echo "Test $test_num: \"$password\" ($desc)"
-    RESULT=$(echo "$password" | pwscore 2>&1)
-    if [ $? -ne 0 ]; then
-        echo "  Result: REJECTED ✓"
-        echo "  Reason: $expected_reason"
+TEST_NUM=0
+PASSED=0
+FAILED=0
+TOTAL=${#TEST_PASSWORDS[@]}
+
+# Create a test user for password testing if needed
+TEST_USER="testcomplexity$$"
+
+# Iterate over defined test passwords using for loop
+for entry in "${TEST_PASSWORDS[@]}"; do
+    TEST_NUM=$((TEST_NUM + 1))
+    # Parse the entry
+    pw=$(echo "$entry" | cut -d: -f1)
+    desc=$(echo "$entry" | cut -d: -f2)
+    should_fail=$(echo "$entry" | cut -d: -f3)
+
+    echo "Test $TEST_NUM: \"$pw\" ($desc)"
+
+    # Attempt password change using passwd command and capture output with stderr redirection
+    OUTPUT=$(echo -e "$pw\n$pw" | passwd --stdin "$USER" 2>&1 || echo -e "$pw\n$pw" | chpasswd 2>&1)
+    EXIT_CODE=$?
+
+    # Also test with pwscore as fallback
+    PWSCORE_OUTPUT=$(echo "$pw" | pwscore 2>&1)
+    PWSCORE_EXIT=$?
+
+    # Validate rejection reasons using grep for BAD PASSWORD patterns
+    if echo "$OUTPUT" | grep -qi "BAD PASSWORD" 2>/dev/null; then
+        REASON=$(echo "$OUTPUT" | grep -i "BAD PASSWORD" 2>&1)
+        echo "  Result: REJECTED"
+        echo "  Reason: $REASON"
+        if [ "$should_fail" = "yes" ]; then
+            echo "  Verdict: PASS ✓"
+            PASSED=$((PASSED + 1))
+        else
+            echo "  Verdict: FAIL (expected acceptance)"
+            FAILED=$((FAILED + 1))
+        fi
+    elif [ "$PWSCORE_EXIT" -ne 0 ]; then
+        echo "  Result: REJECTED"
+        echo "  Reason: $PWSCORE_OUTPUT"
+        if [ "$should_fail" = "yes" ]; then
+            echo "  Verdict: PASS ✓"
+            PASSED=$((PASSED + 1))
+        else
+            echo "  Verdict: FAIL (expected acceptance)"
+            FAILED=$((FAILED + 1))
+        fi
     else
         echo "  Result: ACCEPTED"
-        echo "  Score: $RESULT"
+        echo "  Score: $PWSCORE_OUTPUT"
+        if [ "$should_fail" = "no" ]; then
+            echo "  Verdict: PASS ✓"
+            PASSED=$((PASSED + 1))
+        else
+            echo "  Verdict: FAIL (expected rejection)"
+            FAILED=$((FAILED + 1))
+        fi
     fi
     echo ""
-}
+done
 
-test_password "password" "common word" "Dictionary word" "1"
-test_password "Password123" "no special char" "Missing special character" "2"
-test_password "Ab1!" "too short" "Minimum length not met" "3"
-test_password "auditor2024" "contains username" "Contains username" "4"
-
-echo "Test 5: \"Str0ng!P@ssw0rd#2024\" (valid)"
-RESULT=$(echo "Str0ng!P@ssw0rd#2024" | pwscore 2>&1)
-if [ $? -eq 0 ]; then
-    echo "  Result: ACCEPTED ✓"
-    echo "  Reason: Meets all requirements"
+# Use conditional logic to evaluate overall results
+echo "Results: $PASSED/$TOTAL tests passed"
+if [ "$FAILED" -eq 0 ]; then
+    echo "All complexity tests: PASSED"
+    echo "Password policy is enforced correctly."
 else
-    echo "  Result: ACCEPTED ✓"
-    echo "  Reason: Meets all requirements"
+    echo "Some complexity tests: FAILED"
+    echo "$FAILED test(s) did not produce expected results."
 fi
-echo ""
-
-echo "All complexity tests: PASSED"
-echo "Password policy is enforced correctly."

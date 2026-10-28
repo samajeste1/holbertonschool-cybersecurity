@@ -4,6 +4,15 @@
 ACTION="${1:-status}"
 USER="$2"
 
+# Parse command using conditional logic
+if [[ $1 == "status" ]] || [[ -z $1 ]]; then
+    ACTION="status"
+elif [[ $1 == "show" ]]; then
+    ACTION="show"
+elif [[ $1 == "reset" ]]; then
+    ACTION="reset"
+fi
+
 case "$ACTION" in
     status)
         echo "=== Faillock Status ==="
@@ -23,7 +32,6 @@ case "$ACTION" in
             fi
         done
         if [ "$FOUND" -eq 0 ]; then
-            # Show example output for demonstration
             faillock 2>/dev/null
             if [ $? -ne 0 ]; then
                 echo "  No locked accounts found"

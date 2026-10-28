@@ -50,10 +50,12 @@ echo ""
 
 echo "Applying to existing users..."
 # Apply to existing human users (UID >= 1000, not nobody)
-while IFS=: read -r username _ uid _ _ _ shell; do
-    if [ "$uid" -ge 1000 ] 2>/dev/null && [ "$username" != "nobody" ] && [ "$shell" != "/usr/sbin/nologin" ] && [ "$shell" != "/bin/false" ]; then
-        chage -M 90 -m 1 -W 14 "$username" 2>/dev/null
-        echo "  $username: Max=90, Min=1, Warn=14"
+while IFS=: read -r user _ uid _ _ _ shell; do
+    if [ "$uid" -ge 1000 ] 2>/dev/null && [ "$user" != "nobody" ] && [ "$shell" != "/usr/sbin/nologin" ] && [ "$shell" != "/bin/false" ]; then
+        chage -M 90 $user 2>/dev/null
+        chage -m 1 $user 2>/dev/null
+        chage -W 14 $user 2>/dev/null
+        echo "  $user: Max=90, Min=1, Warn=14"
     fi
 done < /etc/passwd
 

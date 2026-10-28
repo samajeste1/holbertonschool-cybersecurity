@@ -4,6 +4,20 @@
 echo "=== Password Complexity Configuration ==="
 echo ""
 
+echo "Fixing any interrupted package operations..."
+dpkg --configure -a 2>/dev/null
+apt-get install -f -y > /dev/null 2>&1
+echo "  Package system repaired"
+
+# Verify no broken packages remain
+BROKEN=$(dpkg --audit 2>/dev/null | wc -l)
+if [ "$BROKEN" -eq 0 ]; then
+    echo "  No broken packages remaining"
+else
+    echo "  WARNING: $BROKEN broken packages found"
+fi
+echo ""
+
 echo "Installing libpam-pwquality..."
 if dpkg -l libpam-pwquality 2>/dev/null | grep -q '^ii'; then
     echo "  Already installed: libpam-pwquality"

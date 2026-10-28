@@ -4,6 +4,32 @@
 echo "=== PAM Configuration Audit ==="
 echo ""
 
+# Check for running apt/dpkg processes before removing locks
+echo "Checking for running package manager processes..."
+if pgrep -x "apt\|dpkg" > /dev/null 2>&1 || ps aux | grep -E "apt|dpkg" | grep -v grep > /dev/null 2>&1; then
+    echo "  WARNING: apt or dpkg processes are running"
+    echo "  Waiting for package manager to finish..."
+    while fuser /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock-frontend 2>/dev/null; do
+        sleep 1
+    done
+else
+    echo "  No running apt/dpkg processes found"
+fi
+
+# Remove stale lock files if no processes are running
+if ! pgrep -x "dpkg" > /dev/null 2>&1 && ! pgrep -x "apt" > /dev/null 2>&1; then
+    rm -f /var/lib/dpkg/lock /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock-frontend 2>/dev/null
+    dpkg --configure -a 2>/dev/null
+fi
+
+# Verify locks are cleared
+if ! fuser /var/lib/dpkg/lock 2>/dev/null && ! lsof /var/lib/dpkg/lock 2>/dev/null; then
+    echo "  Package manager locks: Clear"
+else
+    echo "  WARNING: Package manager locks still present"
+fi
+echo ""
+
 # Audit common-auth
 echo "/etc/pam.d/common-auth:"
 if [ -f /etc/pam.d/common-auth ]; then

@@ -10,12 +10,15 @@ TOTAL=12
 # --- Password Policy ---
 echo "Password Policy:"
 
-# Check complexity enforcement
+# Check complexity enforcement (pam_pwquality)
 if [ -f /etc/security/pwquality.conf ] && grep -q 'minlen' /etc/security/pwquality.conf 2>/dev/null; then
-    echo "  Complexity enforcement: ACTIVE ✓"
+    echo "  Complexity enforcement (pam_pwquality): ACTIVE ✓"
+    PASSED=$((PASSED + 1))
+elif grep -q 'pam_pwquality.so' /etc/pam.d/common-password 2>/dev/null; then
+    echo "  Complexity enforcement (pam_pwquality): ACTIVE ✓"
     PASSED=$((PASSED + 1))
 else
-    echo "  Complexity enforcement: NOT CONFIGURED"
+    echo "  Complexity enforcement (pam_pwquality): NOT CONFIGURED"
 fi
 
 # Check minimum length

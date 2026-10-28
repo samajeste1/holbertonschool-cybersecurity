@@ -9,7 +9,7 @@ if dpkg -l libpam-google-authenticator 2>/dev/null | grep -q '^ii'; then
     echo "  Package: Installed"
 else
     apt-get update > /dev/null 2>&1
-    apt-get install -y libpam-google-authenticator > /dev/null 2>&1
+    apt install -y libpam-google-authenticator > /dev/null 2>&1
     echo "  Package: Installed"
 fi
 echo ""

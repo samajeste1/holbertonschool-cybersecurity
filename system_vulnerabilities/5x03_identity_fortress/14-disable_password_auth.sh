@@ -22,9 +22,8 @@ echo ""
 SSHD_CONFIG="/etc/ssh/sshd_config"
 
 echo "Backing up sshd_config..."
-BACKUP="${SSHD_CONFIG}.backup.$(date +%Y%m%d)"
-cp "$SSHD_CONFIG" "$BACKUP" 2>/dev/null
-echo "  $BACKUP"
+cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup 2>/dev/null
+echo "  /etc/ssh/sshd_config.backup"
 echo ""
 
 echo "Modifying /etc/ssh/sshd_config..."

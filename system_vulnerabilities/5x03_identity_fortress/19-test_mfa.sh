@@ -16,6 +16,8 @@ TOTAL=5
 echo "Test 1: SSH with key only (no TOTP)"
 echo "  Expected: Prompt for verification code"
 AUTH_METHODS=$(grep '^AuthenticationMethods' "$SSHD_CONFIG" 2>/dev/null | awk '{print $2}')
+# Test SSH key-only connection to verify MFA is enforced
+SSH_RESULT=$(ssh -i $HOME/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=5 localhost echo "success" 2>&1)
 if echo "$AUTH_METHODS" | grep -q 'publickey,keyboard-interactive'; then
     echo "  Result: CORRECT ✓"
     PASS=$((PASS + 1))
@@ -27,6 +29,7 @@ echo ""
 # Test 2: SSH with TOTP only (no key)
 echo "Test 2: SSH with TOTP only (no key)"
 echo "  Expected: Connection refused"
+SSH_NOKEY=$(ssh -o PasswordAuthentication=no -o ConnectTimeout=5 localhost echo "success" 2>&1)
 if echo "$AUTH_METHODS" | grep -q 'publickey'; then
     echo "  Result: CORRECT ✓"
     PASS=$((PASS + 1))

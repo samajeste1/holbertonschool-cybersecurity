@@ -8,9 +8,9 @@ SSHD_CONFIG="/etc/ssh/sshd_config"
 PAM_SSHD="/etc/pam.d/sshd"
 
 echo "Backing up configurations..."
-cp "$PAM_SSHD" "${PAM_SSHD}.backup" 2>/dev/null
+cp /etc/pam.d/sshd /etc/pam.d/sshd.backup 2>/dev/null
 echo "  /etc/pam.d/sshd.backup"
-cp "$SSHD_CONFIG" "${SSHD_CONFIG}.backup" 2>/dev/null
+cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup 2>/dev/null
 echo "  /etc/ssh/sshd_config.backup"
 echo ""
 

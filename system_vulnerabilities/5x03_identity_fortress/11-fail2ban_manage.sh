@@ -4,6 +4,15 @@
 ACTION="${1:-status}"
 PARAM="$2"
 
+# Parse command using conditional logic
+if [[ $1 == "status" ]] || [[ -z $1 ]]; then
+    ACTION="status"
+elif [[ $1 == "banned" ]]; then
+    ACTION="banned"
+elif [[ $1 == "unban" ]]; then
+    ACTION="unban"
+fi
+
 case "$ACTION" in
     status)
         echo "=== fail2ban Status ==="

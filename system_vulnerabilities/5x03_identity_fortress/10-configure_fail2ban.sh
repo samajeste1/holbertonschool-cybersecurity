@@ -9,7 +9,7 @@ if dpkg -l fail2ban 2>/dev/null | grep -q '^ii'; then
     echo "  fail2ban: Installed"
 else
     apt-get update > /dev/null 2>&1
-    apt-get install -y fail2ban > /dev/null 2>&1
+    apt install -y fail2ban > /dev/null 2>&1
     echo "  fail2ban: Installed"
 fi
 echo ""
