@@ -19,7 +19,7 @@ for test_pass in 'password' 'Password123' 'Ab1!' 'auditor2024' 'Str0ng!P@ssw0rd#
     echo "Test $TEST_NUM: \"$test_pass\""
 
     # Attempt password change using passwd command and capture output with stderr redirection
-    OUTPUT=$(echo -e "$test_pass\n$test_pass" | passwd --stdin "$USER" 2>&1 || echo -e "$test_pass\n$test_pass" | chpasswd 2>&1)
+    OUTPUT=$(echo '$test_pass' | passwd auditor 2>&1)
     EXIT_CODE=$?
 
     # Also test with pwscore as fallback

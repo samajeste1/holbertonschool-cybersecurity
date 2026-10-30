@@ -112,8 +112,8 @@ else
 fi
 
 # Check MFA
-AUTH_METHODS=$(grep '^AuthenticationMethods' "$SSHD_CONFIG" 2>/dev/null | awk '{print $2}')
-if echo "$AUTH_METHODS" | grep -q 'publickey,keyboard-interactive'; then
+AUTH_METHODS=$(grep 'AuthenticationMethods publickey,keyboard-interactive' "$SSHD_CONFIG" 2>/dev/null)
+if [ -n "$AUTH_METHODS" ]; then
     echo "  MFA required: ENABLED ✓"
     PASSED=$((PASSED + 1))
 else

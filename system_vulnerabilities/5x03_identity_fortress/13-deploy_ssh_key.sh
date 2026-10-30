@@ -45,7 +45,7 @@ fi
 echo ""
 
 echo "Setting permissions..."
-chmod 600 "$AUTH_KEYS"
+chmod 600 $HOME/.ssh/authorized_keys
 chown "$TARGET_USER":"$TARGET_USER" "$AUTH_KEYS" 2>/dev/null
 echo "  authorized_keys: 600"
 echo ""
