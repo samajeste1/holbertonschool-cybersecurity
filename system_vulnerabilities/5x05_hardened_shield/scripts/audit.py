@@ -166,7 +166,8 @@ def write_report(path, text):
 
 def main():
     parser = argparse.ArgumentParser(description="Audit the hardened shield image")
-    parser.add_argument("-o", "--output", default="audit_result.md")
+    default_report = str(Path(__file__).resolve().parent / "audit_result.md")
+    parser.add_argument("-o", "--output", default=default_report)
     args = parser.parse_args()
     text, status = render(collect())
     written = write_report(args.output, text)
