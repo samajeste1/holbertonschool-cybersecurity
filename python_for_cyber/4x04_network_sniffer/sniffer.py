@@ -44,6 +44,10 @@ try:
     from scapy.utils import PcapWriter
 except ImportError:
     PcapWriter = None
+try:
+    from scapy.all import wrpcap
+except ImportError:
+    wrpcap = None
 
 
 class PacketProcessor:
@@ -80,9 +84,10 @@ class TCPProcessor(PacketProcessor):
             sport = tcp_layer.sport
             dport = tcp_layer.dport
             flags = tcp_layer.flags
+            sequence = tcp_layer.seq
             return (
-                "[TCP] {}:{} -> {}:{} | Flags: {}".format(
-                    src, sport, dst, dport, flags
+                "[TCP] {}:{} -> {}:{} | Flags: {} | Seq: {}".format(
+                    src, sport, dst, dport, flags, sequence
                 )
             )
         except (AttributeError, TypeError):
@@ -145,17 +150,57 @@ def packet_handler(packet):
     Args:
         packet: A Scapy packet object.
     """
-    if IP is not None and packet.haslayer(IP):
+    try:
+        print(packet.summary())
+    except Exception as error:
+        print("[ERROR] {}".format(error))
+        return
+
+    try:
+        if IP is None or not packet.haslayer(IP):
+            return
+        source_ip = packet[IP].src
+        destination_ip = packet[IP].dst
         if TCP is not None and packet.haslayer(TCP):
+            print("[TCP] {} -> {}".format(source_ip, destination_ip))
             print(_tcp_proc.process(packet))
         elif UDP is not None and packet.haslayer(UDP):
+            print("[UDP] {} -> {}".format(source_ip, destination_ip))
             print(_udp_proc.process(packet))
         elif ICMP is not None and packet.haslayer(ICMP):
+            print("[ICMP] {} -> {}".format(source_ip, destination_ip))
             print(_icmp_proc.process(packet))
-        else:
-            print(packet.summary())
-    else:
-        print(packet.summary())
+    except Exception as error:
+        print("[ERROR] {}".format(error))
+
+
+def capture_sample() -> None:
+    """Capture five packets and print a one-line summary for each."""
+    try:
+        if sniff is None:
+            print("[ERROR] Scapy is not installed.")
+            return
+        sniff(count=5, prn=packet_handler)
+    except PermissionError:
+        print("[ERROR] Root privileges required. Run with sudo.")
+    except Exception as error:
+        print("[ERROR] {}".format(error))
+
+
+class PacketHandler:
+    """Callback object that formats one captured packet.
+
+    Input is a Scapy packet. Output is printed lines: a summary,
+    then ``[PROTOCOL] source -> destination`` when an IP layer exists.
+    """
+
+    def handle(self, packet) -> None:
+        """Print the summary and the protocol line for one packet.
+
+        Args:
+            packet: A Scapy packet object.
+        """
+        packet_handler(packet)
 
 
 class Sniffer:
@@ -196,6 +241,7 @@ class Sniffer:
         self.packet_queue = Queue()
         self.running = False
         self.pcap_writer = None
+        self.captured_packets = []
         self.processors = {
             "TCP": TCPProcessor(),
             "UDP": UDPProcessor(),
@@ -238,6 +284,7 @@ class Sniffer:
             self.running = False
             self.packet_queue.join()
             self._print_stats()
+            self._write_pcap()
             if self.pcap_writer:
                 self.pcap_writer.close()
             print("[INFO] Stopping capture...")
@@ -269,6 +316,8 @@ class Sniffer:
         Args:
             packet: A Scapy packet to process.
         """
+        if self.output_file:
+            self.captured_packets.append(packet)
         if self.pcap_writer:
             self.pcap_writer.write(packet)
 
@@ -311,6 +360,23 @@ class Sniffer:
             except (UnicodeDecodeError, AttributeError):
                 pass
 
+    def _write_pcap(self) -> None:
+        """Save captured packets with wrpcap.
+
+        Writes ``output_file``. Prints a short error if the path
+        cannot be created. Does nothing when no path was requested.
+        """
+        if not self.output_file or wrpcap is None:
+            return
+        if not self.captured_packets:
+            return
+        try:
+            wrpcap(self.output_file, self.captured_packets)
+        except OSError:
+            print("[ERROR] File not found.")
+        except Exception as error:
+            print("[ERROR] {}".format(error))
+
     def _print_stats(self):
         """Print capture statistics summary."""
         print("\n--- Capture Statistics ---")
@@ -319,6 +385,14 @@ class Sniffer:
             if count > 0:
                 print("  {}: {}".format(protocol, count))
         print("  Total: {}".format(total))
+
+
+class SnifferEngine(Sniffer):
+    """Live capture engine built on top of Scapy sniff().
+
+    Reads packets from an interface, applies a BPF filter, and
+    writes optional PCAP output. start blocks until interrupt.
+    """
 
 
 def parse_args():
@@ -351,12 +425,19 @@ def parse_args():
         "-s", "--search",
         help="Search string in packet payloads"
     )
+    parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="Capture five packets and exit"
+    )
     return parser.parse_args()
 
 
-def main():
+def main() -> None:
     """Entry point for PySniffer."""
     print("[INFO] PySniffer initialized.")
+    if len(sys.argv) == 1:
+        return
 
     args = parse_args()
 
@@ -370,7 +451,11 @@ def main():
               " Run with sudo.")
         return
 
-    sniffer = Sniffer(
+    if getattr(args, "sample", False):
+        capture_sample()
+        return
+
+    sniffer = SnifferEngine(
         interface=args.interface,
         filter_str=args.filter,
         output_file=args.write,
