@@ -1,7 +1,6 @@
 #!/bin/bash
 
 log_file="$1"
-output_file="$2"
 
 {
     echo "<!DOCTYPE html>"
@@ -28,4 +27,4 @@ output_file="$2"
     echo "</table>"
     echo "</body>"
     echo "</html>"
-} > "$output_file"
+} > $2

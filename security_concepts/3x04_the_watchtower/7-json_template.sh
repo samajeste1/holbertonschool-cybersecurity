@@ -8,6 +8,6 @@ if grep -q 'json_fmt' /etc/rsyslog.conf; then
     exit 0
 fi
 
-cat >> /etc/rsyslog.conf << 'EOF'
-$template json_fmt,"{\"time\":\"%timestamp%\", \"host\":\"%hostname%\", \"msg\":\"%msg%\"}"
-EOF
+fmt='{"time":"%timestamp%", "host":"%hostname%", "msg":"%msg%"}'
+escaped=$(printf '%s' "$fmt" | sed 's/"/\\"/g')
+printf '$template json_fmt,"%s"\n' "$escaped" >> /etc/rsyslog.conf

@@ -6,7 +6,7 @@ awk '
         next
     chunk = substr($0, RSTART, RLENGTH)
     code = substr(chunk, length(chunk) - 2, 3)
-    if (code ~ /^4/)
+    if (code ~ /^4[0-9][0-9]$/ || code == "404" || code == "403")
         count[$1]++
 }
 END {

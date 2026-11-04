@@ -1,13 +1,9 @@
 #!/bin/bash
 
-print_lines() {
-    local file="$1"
-    local lines
+auth_lines=$(wc -l < /var/log/auth.log | tr -d '[:space:]')
+syslog_lines=$(wc -l < /var/log/syslog | tr -d '[:space:]')
+kern_lines=$(wc -l < /var/log/kern.log | tr -d '[:space:]')
 
-    lines=$(wc -l < "$file" | tr -d '[:space:]')
-    echo "File: ${file} - Lines: ${lines}"
-}
-
-print_lines /var/log/auth.log
-print_lines /var/log/syslog
-print_lines /var/log/kern.log
+echo "File: /var/log/auth.log - Lines: ${auth_lines}"
+echo "File: /var/log/syslog - Lines: ${syslog_lines}"
+echo "File: /var/log/kern.log - Lines: ${kern_lines}"
