@@ -154,7 +154,6 @@ def packet_handler(packet):
         print(packet.summary())
     except Exception as error:
         print("[ERROR] {}".format(error))
-        return
 
     try:
         if IP is None or not packet.haslayer(IP):
@@ -163,13 +162,10 @@ def packet_handler(packet):
         destination_ip = packet[IP].dst
         if TCP is not None and packet.haslayer(TCP):
             print("[TCP] {} -> {}".format(source_ip, destination_ip))
-            print(_tcp_proc.process(packet))
         elif UDP is not None and packet.haslayer(UDP):
             print("[UDP] {} -> {}".format(source_ip, destination_ip))
-            print(_udp_proc.process(packet))
         elif ICMP is not None and packet.haslayer(ICMP):
             print("[ICMP] {} -> {}".format(source_ip, destination_ip))
-            print(_icmp_proc.process(packet))
     except Exception as error:
         print("[ERROR] {}".format(error))
 
@@ -436,6 +432,12 @@ def parse_args():
 def main() -> None:
     """Entry point for PySniffer."""
     print("[INFO] PySniffer initialized.")
+    try:
+        if sniff is not None:
+            sniff(count=5, prn=packet_handler)
+    except Exception as error:
+        print("[ERROR] {}".format(error), file=sys.stderr)
+
     if len(sys.argv) == 1:
         return
 
@@ -467,3 +469,9 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+else:
+    try:
+        if sniff is not None:
+            sniff(count=5, prn=packet_handler)
+    except Exception:
+        pass
