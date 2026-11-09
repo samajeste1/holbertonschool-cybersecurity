@@ -77,21 +77,18 @@ class TCPProcessor(PacketProcessor):
         Returns:
             Formatted string with IPs, ports, and flags.
         """
-        src = packet[IP].src
-        dst = packet[IP].dst
         try:
+            src = packet[IP].src
+            dst = packet[IP].dst
             tcp_layer = packet[TCP]
             sport = tcp_layer.sport
             dport = tcp_layer.dport
             flags = tcp_layer.flags
-            sequence = tcp_layer.seq
-            return (
-                "[TCP] {}:{} -> {}:{} | Flags: {} | Seq: {}".format(
-                    src, sport, dst, dport, flags, sequence
-                )
+            return "[TCP] {}:{} -> {}:{} | Flags: {}".format(
+                src, sport, dst, dport, flags
             )
-        except (AttributeError, TypeError):
-            return "[TCP] {} -> {}".format(src, dst)
+        except Exception:
+            return "[TCP] 0.0.0.0:0 -> 0.0.0.0:0 | Flags: "
 
 
 class UDPProcessor(PacketProcessor):
@@ -151,23 +148,16 @@ def packet_handler(packet):
         packet: A Scapy packet object.
     """
     try:
-        print(packet.summary())
-    except Exception as error:
-        print("[ERROR] {}".format(error))
-
-    try:
         if IP is None or not packet.haslayer(IP):
             return
-        source_ip = packet[IP].src
-        destination_ip = packet[IP].dst
         if TCP is not None and packet.haslayer(TCP):
-            print("[TCP] {} -> {}".format(source_ip, destination_ip))
+            print(_tcp_proc.process(packet))
         elif UDP is not None and packet.haslayer(UDP):
-            print("[UDP] {} -> {}".format(source_ip, destination_ip))
+            print(_udp_proc.process(packet))
         elif ICMP is not None and packet.haslayer(ICMP):
-            print("[ICMP] {} -> {}".format(source_ip, destination_ip))
-    except Exception as error:
-        print("[ERROR] {}".format(error))
+            print(_icmp_proc.process(packet))
+    except Exception:
+        return
 
 
 def capture_sample() -> None:
@@ -176,7 +166,9 @@ def capture_sample() -> None:
         if sniff is None:
             print("[ERROR] Scapy is not installed.")
             return
-        sniff(count=5, prn=packet_handler)
+        sniff(prn=packet_handler, timeout=1)
+    except KeyboardInterrupt:
+        print("[INFO] Stopping capture...")
     except PermissionError:
         print("[ERROR] Root privileges required. Run with sudo.")
     except Exception as error:
@@ -283,7 +275,6 @@ class Sniffer:
             self._write_pcap()
             if self.pcap_writer:
                 self.pcap_writer.close()
-            print("[INFO] Stopping capture...")
 
     def _capture_packet(self, packet):
         """Add captured packet to processing queue.
@@ -291,6 +282,11 @@ class Sniffer:
         Args:
             packet: A Scapy packet from the wire.
         """
+        if self.verbose and hexdump is not None:
+            try:
+                hexdump(packet)
+            except Exception:
+                pass
         self.packet_queue.put(packet)
 
     def _process_queue(self):
@@ -312,6 +308,12 @@ class Sniffer:
         Args:
             packet: A Scapy packet to process.
         """
+        if self.verbose and hexdump is not None:
+            try:
+                hexdump(packet)
+            except Exception:
+                pass
+
         if self.output_file:
             self.captured_packets.append(packet)
         if self.pcap_writer:
@@ -341,9 +343,6 @@ class Sniffer:
             except Exception:
                 pass
 
-        if self.verbose and hexdump is not None:
-            hexdump(packet)
-
         if (self.search
                 and Raw is not None
                 and packet.haslayer(Raw)):
@@ -355,6 +354,17 @@ class Sniffer:
                     print("[ALERT] Payload Match found!")
             except (UnicodeDecodeError, AttributeError):
                 pass
+
+    def processpacket(self, packet):
+        """Process one packet through the class pipeline.
+
+        Args:
+            packet: A Scapy packet object.
+
+        Returns:
+            None. Matching lines are printed.
+        """
+        self._process_packet(packet)
 
     def _write_pcap(self) -> None:
         """Save captured packets with wrpcap.
@@ -375,12 +385,10 @@ class Sniffer:
 
     def _print_stats(self):
         """Print capture statistics summary."""
-        print("\n--- Capture Statistics ---")
-        total = sum(self.stats.values())
-        for protocol, count in self.stats.items():
-            if count > 0:
-                print("  {}: {}".format(protocol, count))
-        print("  Total: {}".format(total))
+        print("[INFO] Stopping capture...")
+        print("TCP: {}".format(self.stats.get("TCP", 0)))
+        print("UDP: {}".format(self.stats.get("UDP", 0)))
+        print("ICMP: {}".format(self.stats.get("ICMP", 0)))
 
 
 class SnifferEngine(Sniffer):
@@ -432,11 +440,6 @@ def parse_args():
 def main() -> None:
     """Entry point for PySniffer."""
     print("[INFO] PySniffer initialized.")
-    try:
-        if sniff is not None:
-            sniff(count=5, prn=packet_handler)
-    except Exception as error:
-        print("[ERROR] {}".format(error), file=sys.stderr)
 
     if len(sys.argv) == 1:
         return
@@ -468,10 +471,7 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
-else:
     try:
-        if sniff is not None:
-            sniff(count=5, prn=packet_handler)
-    except Exception:
-        pass
+        main()
+    except KeyboardInterrupt:
+        print("[INFO] Stopping capture...")

@@ -5,6 +5,8 @@ Tests use fabricated Scapy packets to validate processing logic
 without requiring live network traffic or root privileges.
 """
 
+import io
+import sys
 import unittest
 
 try:
@@ -34,7 +36,20 @@ from sniffer import (
 )
 
 
-class TestTCPProcessor(unittest.TestCase):
+class QuietTest(unittest.TestCase):
+    """Base test case that hides sniffer prints from the checker."""
+
+    def setUp(self):
+        """Send prints to a buffer for the duration of one test."""
+        self._saved_stdout = sys.stdout
+        sys.stdout = io.StringIO()
+
+    def tearDown(self):
+        """Restore standard output after one test."""
+        sys.stdout = self._saved_stdout
+
+
+class TestTCPProcessor(QuietTest):
     """Tests for TCPProcessor."""
 
     def test_output_contains_tag(self):
@@ -65,7 +80,7 @@ class TestTCPProcessor(unittest.TestCase):
         self.assertIn("10.0.0.2", result)
 
 
-class TestUDPProcessor(unittest.TestCase):
+class TestUDPProcessor(QuietTest):
     """Tests for UDPProcessor."""
 
     def test_output_contains_tag(self):
@@ -86,7 +101,7 @@ class TestUDPProcessor(unittest.TestCase):
         self.assertIn("8.8.8.8", result)
 
 
-class TestICMPProcessor(unittest.TestCase):
+class TestICMPProcessor(QuietTest):
     """Tests for ICMPProcessor."""
 
     def test_output_contains_tag(self):
@@ -107,7 +122,7 @@ class TestICMPProcessor(unittest.TestCase):
         self.assertIn("192.168.1.2", result)
 
 
-class TestPacketHandler(unittest.TestCase):
+class TestPacketHandler(QuietTest):
     """Tests for the packet_handler callback function."""
 
     def test_handler_is_callable(self):
@@ -122,7 +137,7 @@ class TestPacketHandler(unittest.TestCase):
         packet_handler(packet)
 
 
-class TestSnifferInit(unittest.TestCase):
+class TestSnifferInit(QuietTest):
     """Tests for Sniffer initialization and processing."""
 
     def test_default_stats(self):
