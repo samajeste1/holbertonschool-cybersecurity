@@ -77,18 +77,24 @@ class TCPProcessor(PacketProcessor):
         Returns:
             Formatted string with IPs, ports, and flags.
         """
+        src = getattr(packet, "src", "")
+        dst = getattr(packet, "dst", "")
+        sport = getattr(packet, "sport", "")
+        dport = getattr(packet, "dport", "")
+        flags = getattr(packet, "flags", "")
         try:
-            src = packet[IP].src
-            dst = packet[IP].dst
-            tcp_layer = packet[TCP]
-            sport = tcp_layer.sport
-            dport = tcp_layer.dport
-            flags = tcp_layer.flags
-            return "[TCP] {}:{} -> {}:{} | Flags: {}".format(
-                src, sport, dst, dport, flags
-            )
+            if packet.haslayer("IP"):
+                src = packet["IP"].src
+                dst = packet["IP"].dst
+            if packet.haslayer("TCP"):
+                sport = packet["TCP"].sport
+                dport = packet["TCP"].dport
+                flags = packet["TCP"].flags
         except Exception:
-            return "[TCP] 0.0.0.0:0 -> 0.0.0.0:0 | Flags: "
+            pass
+        return "[TCP] {}:{} -> {}:{} | Flags: {}".format(
+            src, sport, dst, dport, str(flags)
+        )
 
 
 class UDPProcessor(PacketProcessor):
@@ -136,6 +142,7 @@ class ICMPProcessor(PacketProcessor):
 _tcp_proc = TCPProcessor()
 _udp_proc = UDPProcessor()
 _icmp_proc = ICMPProcessor()
+STATS = {"TCP": 0, "UDP": 0, "ICMP": 0, "Other": 0}
 
 
 def packet_handler(packet):
@@ -148,14 +155,25 @@ def packet_handler(packet):
         packet: A Scapy packet object.
     """
     try:
-        if IP is None or not packet.haslayer(IP):
+        if not packet.haslayer("IP"):
             return
-        if TCP is not None and packet.haslayer(TCP):
-            print(_tcp_proc.process(packet))
-        elif UDP is not None and packet.haslayer(UDP):
-            print(_udp_proc.process(packet))
-        elif ICMP is not None and packet.haslayer(ICMP):
-            print(_icmp_proc.process(packet))
+        source_ip = packet["IP"].src
+        destination_ip = packet["IP"].dst
+        if packet.haslayer("TCP"):
+            STATS["TCP"] += 1
+            print("[TCP] {} -> {}".format(
+                source_ip, destination_ip
+            ))
+        elif packet.haslayer("UDP"):
+            STATS["UDP"] += 1
+            print("[UDP] {} -> {}".format(
+                source_ip, destination_ip
+            ))
+        elif packet.haslayer("ICMP"):
+            STATS["ICMP"] += 1
+            print("[ICMP] {} -> {}".format(
+                source_ip, destination_ip
+            ))
     except Exception:
         return
 
@@ -282,19 +300,14 @@ class Sniffer:
         Args:
             packet: A Scapy packet from the wire.
         """
-        if self.verbose and hexdump is not None:
-            try:
-                hexdump(packet)
-            except Exception:
-                pass
+        self._process_packet(packet)
         self.packet_queue.put(packet)
 
     def _process_queue(self):
         """Process packets from the queue (worker thread)."""
         while self.running or not self.packet_queue.empty():
             try:
-                packet = self.packet_queue.get(timeout=1)
-                self._process_packet(packet)
+                self.packet_queue.get(timeout=1)
                 self.packet_queue.task_done()
             except Empty:
                 continue
@@ -319,20 +332,35 @@ class Sniffer:
         if self.pcap_writer:
             self.pcap_writer.write(packet)
 
-        if IP is None or not packet.haslayer(IP):
+        try:
+            has_ip = packet.haslayer("IP")
+        except Exception:
+            has_ip = False
+        if not has_ip:
             self.stats["Other"] += 1
             return
 
-        if TCP is not None and packet.haslayer(TCP):
+        if packet.haslayer("TCP"):
             protocol = "TCP"
-        elif UDP is not None and packet.haslayer(UDP):
+        elif packet.haslayer("UDP"):
             protocol = "UDP"
-        elif ICMP is not None and packet.haslayer(ICMP):
+        elif packet.haslayer("ICMP"):
             protocol = "ICMP"
         else:
             protocol = "Other"
 
         self.stats[protocol] += 1
+        STATS[protocol] = STATS.get(protocol, 0) + 1
+
+        if protocol in ("TCP", "UDP", "ICMP"):
+            try:
+                source_ip = packet["IP"].src
+                destination_ip = packet["IP"].dst
+                print("[{}] {} -> {}".format(
+                    protocol, source_ip, destination_ip
+                ))
+            except Exception:
+                pass
 
         if protocol in self.processors:
             try:
@@ -437,11 +465,27 @@ def parse_args():
     return parser.parse_args()
 
 
+def _report_shutdown() -> None:
+    """Print the stop message and the protocol counters."""
+    print("[INFO] Stopping capture...")
+    print("TCP: {}".format(STATS["TCP"]))
+    print("UDP: {}".format(STATS["UDP"]))
+    print("ICMP: {}".format(STATS["ICMP"]))
+
+
 def main() -> None:
     """Entry point for PySniffer."""
     print("[INFO] PySniffer initialized.")
 
     if len(sys.argv) == 1:
+        try:
+            if sniff is not None:
+                sniff(prn=packet_handler, store=0)
+        except KeyboardInterrupt:
+            pass
+        except Exception as error:
+            print("[ERROR] {}".format(error))
+        _report_shutdown()
         return
 
     args = parse_args()
