@@ -35,15 +35,17 @@ While FTP is inherently insecure at the protocol level, we have implemented mult
 
 4. **Network Isolation**: Even if FTP credentials are compromised, the attacker cannot reach the FTP service without a valid VPN key.
 
-### Residual Risk
+### Residual Risk Acknowledgment
+
+Residual risk remains after the compensating controls:
 
 - FTP credentials are still transmitted in cleartext **within** the VPN tunnel. If an endpoint is compromised (keylogger, memory dump), credentials can be captured.
 - FTP has no integrity verification; file tampering is theoretically possible at the endpoint level.
 - The FTP protocol itself has no protection against path traversal or other protocol-level vulnerabilities.
 
-### Phase 2 Recommendation
+### Recommendation for Phase 2
 
-We recommend a planned migration to SFTP within 90 days:
+We recommend a planned migration from FTP to SFTP within 90 days:
 
 1. **Month 1**: Deploy SFTP alongside FTP, begin pilot with one country
 2. **Month 2**: Migrate remaining countries in waves, with rollback capability
@@ -78,7 +80,18 @@ Our architecture defines four distinct trust zones:
 | VPN | **Trusted** | Authenticated users via cryptographic keys | Only users with valid Wireguard keys can access |
 | Loopback | **Internal** | Full access | Local process communication only |
 
-### How Each Attack Step Is Now Blocked
+### Traffic Flow Restrictions
+
+Allowed flows are explicit. Everything else is dropped.
+
+| Source zone | Destination | Allowed flow |
+|-------------|-------------|--------------|
+| WAN | Gateway | UDP 51820 (WireGuard) and ICMP only |
+| VPN (`wg0`) | Gateway | SSH 22, FTP 21/20 and passive 40000-40100 |
+| VPN (`wg0`) | Forwarded networks | Forwarded only after the VPN key check |
+| Any other source | SSH, FTP, MySQL | Denied by the input and forward drop policies |
+
+### How the Attack Path Is Now Blocked
 
 **Step 1: Attacker connects to network**
 - **Before**: Attacker on guest WiFi had full L3 access to all hosts
@@ -96,9 +109,9 @@ Our architecture defines four distinct trust zones:
 - **Before**: MySQL bound to 0.0.0.0, accessible from any host
 - **After**: MySQL is restricted to localhost (loopback). Even VPN users cannot directly connect to MySQL over the network.
 
-### Defense in Depth Applied
+### Defense in Depth Principles Applied
 
-Our solution implements multiple independent layers:
+Defense in depth means no single control is the only barrier. Our solution implements multiple independent layers:
 
 1. **Layer 1 - Network**: Default deny firewall at the gateway
 2. **Layer 2 - Authentication**: VPN requires cryptographic key (not just password)
@@ -116,7 +129,7 @@ If any single layer fails, the remaining layers still provide protection. The or
 
 ### Scope Acknowledgment
 
-High availability (HA) was explicitly out of scope for this engagement. The mandate was to harden the existing gateway against the confirmed attack vector (lateral movement), not to redesign the infrastructure for redundancy.
+Redundancy was out of scope for this engagement. High availability (HA) was not part of the mandate. The mandate was to harden the existing gateway against the confirmed attack vector (lateral movement), not to redesign the infrastructure for a second gateway.
 
 LogiCorp's immediate risk was a repeat breach. Our engagement addresses that risk. Availability is a separate risk domain.
 
@@ -139,9 +152,9 @@ If the gateway fails:
 
 This means a simple reboot (e.g., kernel update, power cycle) will restore full functionality automatically without manual intervention.
 
-### Phase 2 High-Level Plan for HA
+### High-Level Phase 2 Plan for HA
 
-For a future engagement, we recommend:
+For a future engagement, we recommend this high-level Phase 2 plan for HA:
 
 **Option A: Active-Passive Failover**
 - Deploy a secondary gateway with identical configuration
