@@ -192,7 +192,7 @@ Markers found on the host during the audit. Each value is also stored in the mat
 |------|--------------------|-------|
 | 0-flag.txt | System enumeration | FLAG{AUD1T_FL4T_N3TW0RK} |
 | 1-flag.txt | Service audit (cleartext FTP) | FLAG{CL34RT3XT_FTP} |
-| 2-flag.txt | Access control review | Not recovered in this workspace. |
+| 2-flag.txt | Access control review (unnecessary service) | FLAG{UNN3C3SS4RY_S3RV1C3} |
 | 3-flag.txt | Network analysis | Not recovered in this workspace. |
 | 4-flag.txt | Scheduled task review | Not recovered in this workspace. |
 
