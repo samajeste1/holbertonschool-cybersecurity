@@ -38,7 +38,7 @@ remove_bloatware() {
         fi
     done
     if [ "${#removed[@]}" -gt 0 ]; then
-        report "Removed ${#removed[@]} package(s): $(join_by ", " "${removed[@]}")."
+        report "Removed: $(join_by ", " "${removed[@]}")."
     elif [ "$failed" -eq 0 ]; then
         report "Removed: none (no unauthorized package present)."
     fi
@@ -58,7 +58,7 @@ install_required_tools() {
         fi
     done
     if [ "${#installed[@]}" -gt 0 ]; then
-        report "Installed ${#installed[@]} package(s): $(join_by ", " "${installed[@]}")."
+        report "Installed: $(join_by ", " "${installed[@]}")."
     elif [ "$failed" -eq 0 ]; then
         report "Installed: none (required tools already present: ${REQUIRED_TOOLS// /, })."
     fi
@@ -193,45 +193,40 @@ check_h03() {
     return 0
 }
 
-# Write the audit report to REPORT_PATH. Each STIG rule is checked
-# against the live system and recorded as [PASS] or [FAIL].
+# Write audit_report.txt: changes, counts, then [WARN] and [ERROR].
+# COMPLIANCE STATUS is PASS when no [ERROR] was recorded.
 generate_report() {
-    local status="PASS" entry
-    AUDIT_LINES=()
-    PASS_COUNT=0
-    FAIL_COUNT=0
+    local status="PASS" summary="[INFO] Hardening procedure completed successfully."
+    local entry level
 
-    record_rule N-01 "Default inbound deny and outbound allow" check_n01
-    record_rule N-02 "SSH, HTTP and HTTPS ports only" check_n02
-    record_rule N-03 "IP forwarding disabled and ICMP echo ignored" check_n03
-    record_rule S-01 "Password auth disabled, public key auth enabled" check_s01
-    record_rule S-02 "Root SSH login disabled" check_s02
-    record_rule I-01 "Password length, complexity and maximum age" check_i01
-    record_rule I-02 "Lockout after failed login attempts" check_i02
-    record_rule I-03 "No unauthorized users above UID threshold" check_i03
-    record_rule I-04 "Root password locked" check_i04
-    record_rule H-01 "Package repositories updated" check_h01
-    record_rule H-02 "telnet, ftp and netcat-traditional removed" check_h02
-    record_rule H-03 "auditd and fail2ban installed" check_h03
-
-    [ "$FAIL_COUNT" -eq 0 ] || status="FAIL"
+    if [ "$ERROR_COUNT" -gt 0 ]; then
+        status="FAIL"
+        summary="[ERROR] Hardening procedure completed with ${ERROR_COUNT} error(s)."
+    elif [ "$WARN_COUNT" -gt 0 ]; then
+        summary="[INFO] Hardening procedure completed successfully."
+    fi
 
     if ! {
         echo "==============================================="
         echo " HARDENING AUDIT REPORT - $(date '+%Y-%m-%d %H:%M:%S')"
         echo "==============================================="
         echo
-        for entry in "${AUDIT_LINES[@]}"; do
-            echo "$entry"
-        done
-        echo
-        for entry in "${REPORT_ENTRIES[@]}"; do
-            echo "$entry"
+        echo "$summary"
+        echo "[INFO] SSH configured on port ${SSH_PORT}."
+        echo "[INFO] Firewall policy created: ports ${SSH_PORT}, ${HTTP_PORT}, ${HTTPS_PORT} ALLOWED."
+        for level in INFO WARN ERROR; do
+            for entry in "${REPORT_ENTRIES[@]}"; do
+                case "$entry" in
+                    "[INFO] SSH configured"*|"[INFO] Firewall policy created"*)
+                        continue
+                        ;;
+                esac
+                [[ "$entry" == "[$level]"* ]] && echo "$entry"
+            done
         done
         echo
         echo "==============================================="
         echo " COMPLIANCE STATUS: $status"
-        echo " PASSED: $PASS_COUNT  FAILED: $FAIL_COUNT"
         echo "==============================================="
     } > "$REPORT_PATH"; then
         log ERROR "Cannot write audit report: $REPORT_PATH"

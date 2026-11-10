@@ -21,7 +21,7 @@ create_firewall_policy() {
         log ERROR "Cannot write firewall policy: $FIREWALL_POLICY_FILE"
         return 1
     fi
-    report "Firewall policy created ($FIREWALL_POLICY_FILE): ports $(join_by ", " "${ports[@]}") ALLOWED, default inbound DENY."
+    report "Firewall policy created: ports $(join_by ", " "${ports[@]}") ALLOWED."
 }
 
 # N-03: disable IP forwarding and ignore ICMP echo requests.
