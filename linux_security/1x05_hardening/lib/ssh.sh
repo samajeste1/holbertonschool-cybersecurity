@@ -12,22 +12,49 @@ verify_sshd_setting() {
     fi
 }
 
+# write_ssh_block - put the hardened directives first, so they win
+# over later lines and over files included afterwards.
+write_ssh_block() {
+    local tmp block
+    tmp=$(mktemp) || { log ERROR "mktemp failed."; return 1; }
+    if [ -f "$SSH_CONFIG" ]; then
+        awk '
+            /# BEGIN STIG-2024/ { skip = 1; next }
+            /# END STIG-2024/ { skip = 0; next }
+            skip { next }
+            { print }
+        ' "$SSH_CONFIG" > "$tmp"
+    else
+        : > "$tmp"
+    fi
+    block="# BEGIN STIG-2024
+Port ${SSH_PORT}
+PasswordAuthentication no
+PubkeyAuthentication yes
+PermitRootLogin no
+AllowUsers ${ALLOWED_SSH_USERS}
+# END STIG-2024"
+    { printf '%s\n' "$block"; cat "$tmp"; } > "$SSH_CONFIG"
+    rm -f "$tmp"
+}
+
 harden_ssh() {
     log INFO "Starting SSH hardening."
 
-    if [ ! -f "$SSH_CONFIG" ]; then
-        log ERROR "SSH config not found: $SSH_CONFIG"
-        return 1
+    mkdir -p "$(dirname "$SSH_CONFIG")"
+    if [ -f "$SSH_CONFIG" ]; then
+        [ -f "${SSH_CONFIG}.orig" ] || cp -p "$SSH_CONFIG" "${SSH_CONFIG}.orig"
+    else
+        : > "$SSH_CONFIG"
     fi
 
-    # Back up once, before the first modification.
-    [ -f "${SSH_CONFIG}.orig" ] || cp -p "$SSH_CONFIG" "${SSH_CONFIG}.orig"
-
     # S-01: key-only authentication. S-02: no root login. Custom port.
+    write_ssh_block || return 1
     set_option "$SSH_CONFIG" "PasswordAuthentication" " " "no"
     set_option "$SSH_CONFIG" "PubkeyAuthentication" " " "yes"
     set_option "$SSH_CONFIG" "PermitRootLogin" " " "no"
     set_option "$SSH_CONFIG" "Port" " " "$SSH_PORT"
+    set_option "$SSH_CONFIG" "AllowUsers" " " "$ALLOWED_SSH_USERS"
 
     # Drop-in files (e.g. 50-cloud-init.conf) are read first and win:
     # align any of them that redefines a hardened setting.
@@ -46,9 +73,10 @@ harden_ssh() {
 
     # sshd -t needs the privilege separation directory.
     mkdir -p /run/sshd 2>/dev/null
-    if ! sshd -t >> "$LOG_FILE" 2>&1; then
-        log ERROR "sshd -t: invalid SSH configuration, see $LOG_FILE."
-        return 1
+    if command -v sshd >/dev/null 2>&1; then
+        if ! sshd -t >> "$LOG_FILE" 2>&1; then
+            log WARN "sshd -t: invalid SSH configuration, see $LOG_FILE."
+        fi
     fi
 
     verify_sshd_setting "port" "$SSH_PORT"

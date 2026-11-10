@@ -48,26 +48,32 @@ PAM and SSH files are backed up once (`*.orig`) before their first modification.
 
 - Every action is logged with a timestamp and a level to `/var/log/hardening.log`:
   `[2024-01-15 14:32:01] [INFO] SSH configured on port 2222.`
-- At the end, `audit_report.txt` is written in the **current directory**. It lists
-  the changes actually applied (with counts), then every `[WARN]` and `[ERROR]`
-  met during the run, then the compliance status: `PASS` when no error occurred,
-  `FAIL` otherwise.
+- At the end, `audit_report.txt` is written in the **current directory**.
+  Each STIG rule (N-01 through H-03) is checked on the live system and
+  recorded as `[PASS]` or `[FAIL]`. The compliance status is `PASS` only
+  when every rule passes.
 
 ```
 ===============================================
  HARDENING AUDIT REPORT - 2024-01-15 14:32:01
 ===============================================
 
-[INFO] Hardening procedure completed successfully.
-[INFO] SSH configured on port 2222.
-[INFO] Firewall policy created (/etc/hardening/firewall.rules): ports 2222, 80, 443 ALLOWED, default inbound DENY.
-[INFO] 3 unauthorized users removed: guest, temp, test.
-[INFO] Installed 2 package(s): auditd, fail2ban.
-[INFO] Removed 3 package(s): telnet, ftp, netcat-traditional.
-[WARN] Package updates skipped (already up to date).
+[PASS] N-01 Default inbound deny and outbound allow
+[PASS] N-02 SSH, HTTP and HTTPS ports only
+[PASS] N-03 IP forwarding disabled and ICMP echo ignored
+[PASS] S-01 Password auth disabled, public key auth enabled
+[PASS] S-02 Root SSH login disabled
+[PASS] I-01 Password length, complexity and maximum age
+[PASS] I-02 Lockout after failed login attempts
+[PASS] I-03 No unauthorized users above UID threshold
+[PASS] I-04 Root password locked
+[PASS] H-01 Package repositories updated
+[PASS] H-02 telnet, ftp and netcat-traditional removed
+[PASS] H-03 auditd and fail2ban installed
 
 ===============================================
  COMPLIANCE STATUS: PASS
+ PASSED: 12  FAILED: 0
 ===============================================
 ```
 

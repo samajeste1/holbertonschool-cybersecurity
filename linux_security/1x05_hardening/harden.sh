@@ -3,7 +3,7 @@
 # Loads the configuration and the hardening modules, runs them, then
 # writes audit_report.txt in the current directory.
 
-if [ "$(id -u)" -ne 0 ]; then
+if [ "$(id -u)" -ne 0 ] || [ "$EUID" -ne 0 ]; then
     echo "[ERROR] This script must be run as root." >&2
     exit 1
 fi
@@ -73,9 +73,11 @@ is_installed() {
 # replace the active line(s), else the first commented one, else append.
 set_option() {
     local file="$1" key="$2" separator="$3" value="$4"
-    local active="^[[:space:]]*${key}\b"
-    local commented="^[[:space:]]*#[[:space:]]*${key}\b"
-    local line="${key}${separator}${value}"
+    local key_re active commented line
+    key_re=$(printf '%s' "$key" | sed -E 's/[][(){}.+*?^$|\\]/\\&/g')
+    active="^[[:space:]]*${key_re}\\b"
+    commented="^[[:space:]]*#[[:space:]]*${key_re}\\b"
+    line="${key}${separator}${value}"
     if [ ! -f "$file" ]; then
         log ERROR "Configuration file missing: $file"
         return 1
@@ -89,18 +91,33 @@ set_option() {
     fi
 }
 
+# run_apt ARG... - non-interactive apt-get, bounded so a mirror
+# outage cannot hang the hardening run.
+run_apt() {
+    if command -v timeout >/dev/null 2>&1; then
+        timeout 25 apt-get "$@"
+    else
+        apt-get "$@"
+    fi
+}
+
 if ! mkdir -p "$(dirname "$LOG_FILE")" || ! touch "$LOG_FILE"; then
     echo "[ERROR] Cannot write log file: $LOG_FILE" >&2
     exit 1
 fi
 
-for module in network ssh identity system; do
-    if [ ! -f "$SCRIPT_DIR/lib/$module.sh" ]; then
-        echo "[ERROR] Module not found: lib/$module.sh" >&2
+for module in \
+    "$SCRIPT_DIR/lib/network.sh" \
+    "$SCRIPT_DIR/lib/ssh.sh" \
+    "$SCRIPT_DIR/lib/identity.sh" \
+    "$SCRIPT_DIR/lib/system.sh"
+do
+    if [ ! -f "$module" ]; then
+        echo "[ERROR] Module not found: $module" >&2
         exit 1
     fi
     # shellcheck source=/dev/null
-    source "$SCRIPT_DIR/lib/$module.sh"
+    source "$module"
 done
 
 log INFO "Hardening framework initialized"

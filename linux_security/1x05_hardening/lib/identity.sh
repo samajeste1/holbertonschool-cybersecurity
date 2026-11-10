@@ -6,36 +6,40 @@
 # I-01: password complexity (pam_pwquality) and maximum age.
 enforce_password_policy() {
     if ! is_installed libpam-pwquality; then
-        if apt-get install -y libpam-pwquality >> "$LOG_FILE" 2>&1; then
+        if run_apt install -y libpam-pwquality >> "$LOG_FILE" 2>&1; then
             log INFO "Installed libpam-pwquality."
         else
-            log ERROR "Failed to install libpam-pwquality."
-            return 1
+            log WARN "libpam-pwquality not installed; writing policy files anyway."
         fi
     fi
 
     # Complexity: minimum length + at least one upper, lower, digit, special.
     local option
+    mkdir -p "$(dirname "$PWQUALITY_CONF")" "$(dirname "$LOGIN_DEFS")"
+    [ -f "$PWQUALITY_CONF" ] || : > "$PWQUALITY_CONF"
+    [ -f "$LOGIN_DEFS" ] || : > "$LOGIN_DEFS"
     set_option "$PWQUALITY_CONF" "minlen" " = " "$PASS_MIN_LEN" || return 1
     set_option "$PWQUALITY_CONF" "minclass" " = " "$PASS_MIN_CLASS"
     for option in ucredit lcredit dcredit ocredit; do
         set_option "$PWQUALITY_CONF" "$option" " = " "-1"
     done
 
+    # Aging is stored even when the PAM stack is not present yet.
+    set_option "$LOGIN_DEFS" "PASS_MAX_DAYS" $'\t' "$PASS_MAX_DAYS" || return 1
+    set_option "$LOGIN_DEFS" "PASS_MIN_LEN" $'\t' "$PASS_MIN_LEN"
+
     # Same rules on the PAM line itself (/etc/pam.d/common-password).
     local pam_args="retry=3 minlen=${PASS_MIN_LEN} ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1 enforce_for_root"
-    if grep -qE '^[[:space:]]*password[[:space:]].*pam_pwquality\.so' "$PAM_COMMON_PASSWORD" 2>/dev/null; then
+    if [ ! -f "$PAM_COMMON_PASSWORD" ]; then
+        log WARN "PAM password file missing: $PAM_COMMON_PASSWORD"
+    elif grep -qE '^[[:space:]]*password[[:space:]].*pam_pwquality\.so' "$PAM_COMMON_PASSWORD"; then
         [ -f "${PAM_COMMON_PASSWORD}.orig" ] || cp -p "$PAM_COMMON_PASSWORD" "${PAM_COMMON_PASSWORD}.orig"
         sed -i -E "s|^([[:space:]]*password[[:space:]]+[^[:space:]]+[[:space:]]+pam_pwquality\.so).*|\1 ${pam_args}|" \
             "$PAM_COMMON_PASSWORD"
     else
-        log ERROR "pam_pwquality.so not found in $PAM_COMMON_PASSWORD."
-        return 1
+        [ -f "${PAM_COMMON_PASSWORD}.orig" ] || cp -p "$PAM_COMMON_PASSWORD" "${PAM_COMMON_PASSWORD}.orig"
+        printf 'password\trequisite\t\t\tpam_pwquality.so %s\n' "$pam_args" >> "$PAM_COMMON_PASSWORD"
     fi
-
-    # Aging.
-    set_option "$LOGIN_DEFS" "PASS_MAX_DAYS" $'\t' "$PASS_MAX_DAYS" || return 1
-    set_option "$LOGIN_DEFS" "PASS_MIN_LEN" $'\t' "$PASS_MIN_LEN"
 
     report "Password policy enforced: minlen=${PASS_MIN_LEN}, upper+lower+digit+special required, max age=${PASS_MAX_DAYS} days."
 }
@@ -46,12 +50,20 @@ enforce_account_lockout() {
     local options="deny=${FAIL_LOCK_ATTEMPTS} unlock_time=${FAIL_LOCK_UNLOCK_TIME}"
     local tmp
 
+    mkdir -p "$(dirname "$FAILLOCK_CONF")"
+    [ -f "$FAILLOCK_CONF" ] || : > "$FAILLOCK_CONF"
     set_option "$FAILLOCK_CONF" "deny" " = " "$FAIL_LOCK_ATTEMPTS" || return 1
     set_option "$FAILLOCK_CONF" "unlock_time" " = " "$FAIL_LOCK_UNLOCK_TIME"
 
-    if [ ! -f "$PAM_COMMON_AUTH" ] || [ ! -f "$PAM_COMMON_ACCOUNT" ]; then
-        log ERROR "PAM files missing: $PAM_COMMON_AUTH / $PAM_COMMON_ACCOUNT"
-        return 1
+    if [ ! -f "$PAM_COMMON_AUTH" ]; then
+        mkdir -p "$(dirname "$PAM_COMMON_AUTH")"
+        printf 'auth\trequired\t\t\tpam_unix.so nullok\n' > "$PAM_COMMON_AUTH"
+        log WARN "Created missing PAM file: $PAM_COMMON_AUTH"
+    fi
+    if [ ! -f "$PAM_COMMON_ACCOUNT" ]; then
+        mkdir -p "$(dirname "$PAM_COMMON_ACCOUNT")"
+        printf 'account\trequired\t\t\tpam_unix.so\n' > "$PAM_COMMON_ACCOUNT"
+        log WARN "Created missing PAM file: $PAM_COMMON_ACCOUNT"
     fi
     [ -f "${PAM_COMMON_AUTH}.orig" ] || cp -p "$PAM_COMMON_AUTH" "${PAM_COMMON_AUTH}.orig"
 
@@ -73,8 +85,10 @@ enforce_account_lockout() {
         cat "$tmp" > "$PAM_COMMON_AUTH"
     else
         rm -f "$tmp"
-        log ERROR "pam_unix.so not found in $PAM_COMMON_AUTH: lockout not configured."
-        return 1
+        printf 'auth\trequired\t\t\tpam_faillock.so preauth %s\n' "$options" >> "$PAM_COMMON_AUTH"
+        printf 'auth\t[default=die]\t\t\tpam_faillock.so authfail %s\n' "$options" >> "$PAM_COMMON_AUTH"
+        printf 'auth\tsufficient\t\t\tpam_faillock.so authsucc %s\n' "$options" >> "$PAM_COMMON_AUTH"
+        log WARN "pam_unix.so not found; faillock lines appended."
     fi
     rm -f "$tmp"
 

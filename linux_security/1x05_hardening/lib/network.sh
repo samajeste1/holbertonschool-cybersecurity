@@ -6,8 +6,8 @@
 # allow SSH and the web ports enabled in the configuration).
 create_firewall_policy() {
     local ports=("$SSH_PORT")
-    [ "$ALLOW_HTTP" = "yes" ] && ports+=(80)
-    [ "$ALLOW_HTTPS" = "yes" ] && ports+=(443)
+    [ "$ALLOW_HTTP" = "yes" ] && ports+=("$HTTP_PORT")
+    [ "$ALLOW_HTTPS" = "yes" ] && ports+=("$HTTPS_PORT")
 
     if ! mkdir -p "$(dirname "$FIREWALL_POLICY_FILE")"; then
         log ERROR "Cannot create $(dirname "$FIREWALL_POLICY_FILE")."
@@ -27,8 +27,10 @@ create_firewall_policy() {
 # N-03: disable IP forwarding and ignore ICMP echo requests.
 harden_kernel_network() {
     local setting
+    mkdir -p "$(dirname "$SYSCTL_FILE")"
+    [ -f "$SYSCTL_FILE" ] || : > "$SYSCTL_FILE"
     for setting in "net.ipv4.ip_forward=0" "net.ipv4.icmp_echo_ignore_all=1"; do
-        set_option "$SYSCTL_FILE" "${setting%%=*}" "=" "${setting#*=}"
+        set_option "$SYSCTL_FILE" "${setting%%=*}" " = " "${setting#*=}"
     done
     if sysctl -p "$SYSCTL_FILE" >> "$LOG_FILE" 2>&1; then
         report "Kernel network parameters applied: IP forwarding disabled, ICMP echo ignored."
