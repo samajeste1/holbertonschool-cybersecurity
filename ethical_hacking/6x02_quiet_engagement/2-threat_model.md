@@ -1,0 +1,26 @@
+# Threat Model, Lumen Industrial Systems
+
+## Framework Mix
+
+The rows are tagged with the lens that actually produced them. PASTA stages IV and VII carry the threats that change the NIS2 packet and the three renewals, because that is the business question. STRIDE is used only on the cloud platform and the admin panel, where the element is clear and the architecture team can take the ticket. MITRE technique IDs are used only where reconnaissance of an in-scope demo surface shows an exposure that already has a published technique, not as a catalogue of industrial attacks in general. Customer gateways and shop-floor sensors do not appear. They were not authorized, and a threat against them would be invalid under the Rules of Engagement.
+
+## Threat Matrix
+
+| # | Threat | Asset | Framework Tag | Severity | Rationale |
+| --- | --- | --- | --- | --- | --- |
+| 1 | An authenticated admin upload accepts a file that is both an image and server-side code, and the stored file is executed. | Internal admin panel | STRIDE-T | Critical | The panel is an in-scope Lumen admin surface with an upload function. Identification is the validation gap. Exploitability is a separate, later confirmation. |
+| 2 | A secret returned by the public API, or left in a demo response, is a credential for the admin plane or the demo broker. | Public REST API | PASTA-Stage-IV | High | Recon of the public API is in scope. A token that opens a second Lumen surface is the pivot, not a reason to follow the token onto a customer broker. |
+| 3 | The in-house demo MQTT broker accepts a client without the authentication the production design claims. | Demo MQTT broker (Lumen QA) | MITRE-T1078 | High | The broker is Lumen's demo, so it may be tested. An open demo broker is how a salesperson's environment becomes a management path. |
+| 4 | The demo edge gateway exposes SSH with a reused or default QA credential. | Demo edge gateway (in-house) | STRIDE-S | High | SSH on the in-house gateway is named in scope. The same credential on a customer gateway would be out of scope and is not modeled as a test. |
+| 5 | The admin session is not bound to the user who will later be audited, so a change on the platform has no accountable actor. | Cloud platform / admin panel | STRIDE-R | Medium | NIS2 Article 21 expects the supplier to be able to show who changed what. A shared admin is a traceability failure even without code execution. |
+| 6 | The public API returns more of a tenant's monitoring record than the calling role requires. | Public REST API | STRIDE-I | High | The API is the customer-facing contract. Excess fields are a data-class finding for the conformity packet. |
+| 7 | The cloud platform trusts the demo gateway as if it were a production site. | Cloud platform | PASTA-Stage-VII | High | If demo credentials or demo topics are accepted by the production ingest, a QA asset is a write path into the service the renewals depend on. |
+| 8 | Public DNS and the marketing site publish hostnames of customer plants next to the demo. | Public web / DNS (Lumen) | PASTA-Stage-IV | Medium | The names will appear in reconnaissance. The threat is that a tester or an attacker treats publication as permission. The control is the RoE, not a scan of those names. |
+| 9 | Staff names and roles collected from Lumen's own public pages are reused against the admin panel. | Public employee identifiers | STRIDE-S | Medium | Identifying staff from public sources is in the intelligence phase. Using that list for password spraying is not authorized and is not a finding to go and cause. |
+| 10 | The upload or API stores a file or a message that a later job on the platform interprets with higher privilege than the uploader. | Admin panel to cloud platform | STRIDE-E | High | This is the elevation half of a polyglot or of a poisoned demo message. It stays on Lumen's platform. |
+| 11 | Loss of the demo broker or the platform is reported to customers as an availability incident the packet cannot explain. | Cloud platform | PASTA-Stage-VII | Medium | Article 23 is about incidents, not about every vulnerability. The model keeps that distinction so the report does not call a demo flaw a reportable incident. |
+| 12 | A partner or customer logo page is read as a list of systems Lumen may test. | Public marketing surface | PASTA-Stage-IV | Low | Recon will see customer references. They are commercial claims, not an asset inventory, and they do not enter the test scope. |
+
+## Prioritisation Note
+
+The three threats that matter to the renewals are 1, 2, and 7, in that order. A code-execution flaw on the admin panel is a failure of the access-control and change-management measures Article 21 expects a supplier to have, and it is the finding an auditor will not treat as a demo quirk. A secret in the public API is the step that turns that flaw into reach of a second surface without a new vulnerability. Trust between the production ingest and the demo gateway is the business impact: Lumen would be telling NIS2 customers that QA and production are separated when the platform does not enforce it. The MQTT and SSH findings stay high, but they are contained to assets Lumen actually operates. Customer plants stay out, including when a logo page or a DNS name makes them look close.
